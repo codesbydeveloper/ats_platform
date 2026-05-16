@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { Sparkles } from "lucide-react";
+import { Eye, EyeOff, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,8 @@ export default function LoginPage() {
   const user = useAuthStore((s) => s.user);
   const login = useAuthStore((s) => s.login);
   const rememberDefault = useAuthStore((s) => s.remember);
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const mounted = useSyncExternalStore(
     () => () => {},
@@ -61,16 +63,23 @@ export default function LoginPage() {
     },
   });
 
-  const onSubmit = (values: LoginValues) => {
-    const ok = login(values.email, values.password, values.remember);
-    if (!ok) {
-      toast.error("Check your credentials", {
-        description: "Use any email and a password with 6+ characters.",
-      });
-      return;
+  const onSubmit = async (values: LoginValues) => {
+    setIsSubmitting(true);
+    try {
+      const result = await login(
+        values.email,
+        values.password,
+        values.remember
+      );
+      if (!result.ok) {
+        toast.error("Sign in failed", { description: result.message });
+        return;
+      }
+      toast.success("Welcome back");
+      router.replace("/dashboard");
+    } finally {
+      setIsSubmitting(false);
     }
-    toast.success("Welcome back");
-    router.replace("/dashboard");
   };
 
   if (!mounted) {
@@ -109,8 +118,8 @@ export default function LoginPage() {
           </ul>
           <div className="rounded-2xl border border-white/20 bg-white/10 p-6 backdrop-blur-md">
             <p className="text-sm text-white/80">
-              Demo mode: no backend. Your session stays in this browser via
-              localStorage.
+              Sign in connects to your ATS API. Session is kept in this browser
+              (localStorage).
             </p>
           </div>
         </div>
@@ -136,7 +145,8 @@ export default function LoginPage() {
               Sign in to continue
             </h2>
             <p className="text-sm text-muted-foreground">
-              Use any email and a password with at least six characters.
+              Use your admin credentials (password must be at least six
+              characters).
             </p>
           </div>
           <Form {...form}>
@@ -164,14 +174,31 @@ export default function LoginPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        autoComplete="current-password"
-                        placeholder="••••••••"
-                        {...field}
-                      />
-                    </FormControl>
+                    <div className="relative">
+                      <FormControl>
+                        <Input
+                          type={showPassword ? "text" : "password"}
+                          autoComplete="current-password"
+                          placeholder="••••••••"
+                          className="pr-10"
+                          {...field}
+                        />
+                      </FormControl>
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        className="absolute right-0 top-0 flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        aria-label={
+                          showPassword ? "Hide password" : "Show password"
+                        }
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" aria-hidden />
+                        ) : (
+                          <Eye className="h-4 w-4" aria-hidden />
+                        )}
+                      </button>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -191,13 +218,28 @@ export default function LoginPage() {
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full" size="lg">
-                Continue
+              <Button
+                type="submit"
+                className="w-full"
+                size="lg"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Signing in…" : "Continue"}
               </Button>
             </form>
           </Form>
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            By continuing you agree to the demo terms for this local-only build.
+            {process.env.NODE_ENV === "development" ? (
+              <>
+                Dev: POST{" "}
+                {(
+                  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+                ).replace(/\/$/, "")}
+                /api/auth/signin
+              </>
+            ) : (
+              "Sign in with your organization account."
+            )}
           </p>
           <p className="mt-4 text-center text-xs text-muted-foreground lg:hidden">
             Prefer the full experience?{" "}

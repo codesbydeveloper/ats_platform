@@ -109,8 +109,8 @@ export function Header() {
               Profile & settings
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => {
-                logout();
+              onClick={async () => {
+                await logout();
                 router.push("/login");
                 toast.success("Signed out");
               }}

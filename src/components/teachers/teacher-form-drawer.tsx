@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useFieldArray, useForm, useWatch, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
@@ -40,6 +40,12 @@ import {
   teacherFormSchema,
   type TeacherFormValues,
 } from "@/lib/validations/teacher-form";
+import {
+  applyCreatedTeacherFromApi,
+  createTeacherRequest,
+  updateTeacherRequest,
+} from "@/lib/teachers-api";
+import { useAuthStore } from "@/store/auth-store";
 import type { Teacher } from "@/types/teacher";
 import { createTeacherId, uid } from "@/utils/id";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -55,7 +61,7 @@ function defaultWork(): TeacherFormValues["workHistory"][number] {
   };
 }
 
-function teacherToFormValues(t: Teacher): TeacherFormValues {
+export function teacherToFormValues(t: Teacher): TeacherFormValues {
   return {
     name: t.name,
     mobile: t.mobile,
@@ -76,6 +82,7 @@ function teacherToFormValues(t: Teacher): TeacherFormValues {
     areaOfInterest: t.areaOfInterest,
     currentSalary: t.currentSalary,
     experienceYears: t.experienceYears,
+    status: t.status,
     workHistory: t.workHistory.map((w) => ({
       id: w.id,
       schoolName: w.schoolName,
@@ -112,6 +119,7 @@ function emptyForm(): TeacherFormValues {
     areaOfInterest: "",
     currentSalary: 0,
     experienceYears: 0,
+    status: "active",
     workHistory: [defaultWork()],
     resumeFileName: null,
     resumeMime: null,
@@ -120,19 +128,30 @@ function emptyForm(): TeacherFormValues {
   };
 }
 
+function toIsoSafe(value: string | null | undefined): string | null {
+  if (value == null || String(value).trim() === "") return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 function toTeacher(
   values: TeacherFormValues,
   existing: Teacher[],
   base?: Teacher
 ): Teacher {
-  const workHistory = values.workHistory.map((w) => ({
-    id: w.id,
-    schoolName: w.schoolName,
-    role: w.role,
-    from: new Date(w.from).toISOString(),
-    to: w.currentlyWorking ? null : w.to ? new Date(w.to).toISOString() : null,
-    currentlyWorking: w.currentlyWorking,
-  }));
+  const workHistory = values.workHistory.map((w) => {
+    const fromIso = toIsoSafe(w.from) ?? new Date().toISOString();
+    const toIso = w.currentlyWorking ? null : toIsoSafe(w.to ?? null);
+    return {
+      id: w.id,
+      schoolName: w.schoolName,
+      role: w.role,
+      from: fromIso,
+      to: toIso,
+      currentlyWorking: w.currentlyWorking,
+    };
+  });
   return {
     id: base?.id ?? createTeacherId(existing),
     name: values.name,
@@ -158,7 +177,7 @@ function toTeacher(
     resumeFileName: values.resumeFileName,
     resumeMime: values.resumeMime,
     notes: values.notes ?? "",
-    status: base?.status ?? "active",
+    status: values.status ?? base?.status ?? "active",
     skills: values.skills?.length ? values.skills : ["General"],
     createdAt: base?.createdAt ?? new Date().toISOString(),
   };
@@ -316,6 +335,7 @@ export function TeacherFormDrawer({
   const [confirmClose, setConfirmClose] = useState(false);
   const [saving, setSaving] = useState(false);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resumeFileRef = useRef<File | null>(null);
 
   const form = useForm<TeacherFormValues>({
     resolver: zodResolver(teacherFormSchema) as Resolver<TeacherFormValues>,
@@ -395,24 +415,116 @@ export function TeacherFormDrawer({
     onOpenChange(next);
   };
 
-  const submit = form.handleSubmit(async (values) => {
+  /** Edit: send current form values to API without full Zod re-validation (partial updates OK). */
+  const runEditSave = async () => {
     setSaving(true);
-    await new Promise((r) => setTimeout(r, 400));
-    const built = toTeacher(values, teachers, teacher ?? undefined);
-    onSave(built);
-    if (mode === "add") {
-      localStorage.removeItem(DRAFT_KEY);
-    }
-    setSaving(false);
-    toast.success(
-      mode === "add" ? "Teacher added" : "Teacher updated",
-      {
-        description: `${built.name} is now in your roster.`,
+    try {
+      const values = form.getValues();
+      const built = toTeacher(values, teachers, teacher ?? undefined);
+      let saved: Teacher = built;
+      const token = useAuthStore.getState().accessToken;
+      if (token && teacher) {
+        const api = await updateTeacherRequest(
+          token,
+          teacher.id,
+          values,
+          resumeFileRef.current
+        );
+        if (!api.ok) {
+          toast.error("Could not update teacher", {
+            description: api.message,
+          });
+          return;
+        }
+        saved = applyCreatedTeacherFromApi(api.data, built);
+        onSave(saved);
+        resumeFileRef.current = null;
+        toast.success("Teacher updated", {
+          description: `${saved.name} is synced with the server.`,
+        });
+      } else {
+        await new Promise((r) => setTimeout(r, 400));
+        onSave(built);
+        toast.success("Teacher updated", {
+          description: `${built.name} is now in your roster.`,
+        });
       }
-    );
-    onOpenChange(false);
-    form.reset(mode === "edit" && teacher ? teacherToFormValues(teacher) : emptyForm());
-  });
+
+      onOpenChange(false);
+      form.reset(teacherToFormValues(saved));
+    } catch (e) {
+      console.error(e);
+      toast.error("Could not save", {
+        description:
+          e instanceof Error ? e.message : "Something went wrong. Try again.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitAdd = form.handleSubmit(
+    async (values) => {
+      setSaving(true);
+      try {
+        const token = useAuthStore.getState().accessToken;
+        if (!token) {
+          toast.error("Session missing", {
+            description:
+              "Sign in again so your account can create teachers on the server.",
+          });
+          return;
+        }
+
+        const built = toTeacher(values, teachers, teacher ?? undefined);
+        const api = await createTeacherRequest(
+          token,
+          values,
+          resumeFileRef.current
+        );
+
+        if (!api.ok) {
+          toast.error("Could not create teacher", {
+            description: api.message,
+          });
+          return;
+        }
+
+        const merged = applyCreatedTeacherFromApi(api.data, built);
+        onSave(merged);
+        resumeFileRef.current = null;
+        localStorage.removeItem(DRAFT_KEY);
+        toast.success("Teacher added", {
+          description: `${merged.name} is synced with the server.`,
+        });
+        onOpenChange(false);
+        form.reset(emptyForm());
+      } catch (e) {
+        console.error(e);
+        toast.error("Could not save", {
+          description:
+            e instanceof Error ? e.message : "Something went wrong. Try again.",
+        });
+      } finally {
+        setSaving(false);
+      }
+    },
+    () => {
+      void form.trigger();
+      toast.error("Form incomplete", {
+        description: "Fix the fields marked in red (scroll up if needed).",
+      });
+    }
+  );
+
+  const handleFormSubmit = (e: FormEvent<HTMLFormElement>) => {
+    if (mode === "edit") {
+      e.preventDefault();
+      void runEditSave();
+      return;
+    }
+    submitAdd(e);
+  };
 
   const cityOptions = CITIES[state ?? STATES[0]!] ?? [];
 
@@ -433,6 +545,9 @@ export function TeacherFormDrawer({
               <ResumeQuickUpload
                 fileName={resumeFileName ?? null}
                 disabled={saving}
+                onFileSelected={(file) => {
+                  resumeFileRef.current = file;
+                }}
                 onChange={(next) => {
                   form.setValue("resumeFileName", next.fileName, {
                     shouldDirty: true,
@@ -440,12 +555,15 @@ export function TeacherFormDrawer({
                   form.setValue("resumeMime", next.mime, {
                     shouldDirty: true,
                   });
+                  if (!next.fileName) {
+                    resumeFileRef.current = null;
+                  }
                 }}
               />
             </div>
             <form
               className="flex flex-1 flex-col gap-6 py-2"
-              onSubmit={submit}
+              onSubmit={handleFormSubmit}
             >
               <Card>
                 <CardHeader>
@@ -487,6 +605,31 @@ export function TeacherFormDrawer({
                         <FormControl>
                           <Input type="email" {...field} />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="status"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Employment status</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Status" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="active">Active</SelectItem>
+                            <SelectItem value="inactive">Inactive</SelectItem>
+                            <SelectItem value="pending">Pending</SelectItem>
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}

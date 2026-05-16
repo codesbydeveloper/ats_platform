@@ -5,10 +5,8 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   GraduationCap,
-  LayoutDashboard,
   PanelLeftClose,
   PanelLeft,
-  Settings,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -19,14 +17,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { MAIN_NAV_LINKS } from "@/config/navigation";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/store/ui-store";
-
-const links = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/teachers", label: "Teachers", icon: GraduationCap },
-  { href: "/settings", label: "Settings", icon: Settings },
-];
 
 export function Sidebar({ className }: { className?: string }) {
   const pathname = usePathname();
@@ -81,7 +74,7 @@ export function Sidebar({ className }: { className?: string }) {
       <Separator />
       <ScrollArea className="flex-1 px-2 py-4">
         <nav className="flex flex-col gap-1">
-          {links.map(({ href, label, icon: Icon }) => {
+          {MAIN_NAV_LINKS.map(({ href, label, icon: Icon }) => {
             const active =
               pathname === href || pathname.startsWith(`${href}/`);
             return (

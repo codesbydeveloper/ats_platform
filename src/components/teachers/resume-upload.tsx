@@ -148,6 +148,8 @@ export function ResumeUpload({
 interface ResumeQuickUploadProps {
   fileName: string | null;
   onChange: (next: { fileName: string | null; mime: string | null }) => void;
+  /** Raw file for API uploads (local-only roster does not need it). */
+  onFileSelected?: (file: File | null) => void;
   disabled?: boolean;
 }
 
@@ -155,6 +157,7 @@ interface ResumeQuickUploadProps {
 export function ResumeQuickUpload({
   fileName,
   onChange,
+  onFileSelected,
   disabled,
 }: ResumeQuickUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -194,6 +197,7 @@ export function ResumeQuickUpload({
               fileName: file.name,
               mime: file.type || "application/octet-stream",
             });
+            onFileSelected?.(file);
             toast.success("Resume attached", { description: file.name });
           }}
         />
@@ -207,6 +211,7 @@ export function ResumeQuickUpload({
             aria-label="Remove resume"
             onClick={() => {
               onChange({ fileName: null, mime: null });
+              onFileSelected?.(null);
               toast.message("Resume removed");
             }}
           >

@@ -1,6 +1,6 @@
 import type { Teacher } from "@/types/teacher";
+import { matchesExperienceFilter } from "@/lib/category-filter-options";
 import type { TeacherFilters } from "@/store/filter-store";
-import { matchesExperienceBucket } from "@/store/filter-store";
 
 function includesAny(haystack: string[], needles: string[]) {
   if (!needles.length) return true;
@@ -64,7 +64,7 @@ export function filterTeachers(
     }
     if (filters.experience.length) {
       const ok = filters.experience.some((label) =>
-        matchesExperienceBucket(t.experienceYears, label)
+        matchesExperienceFilter(t.experienceYears, label)
       );
       if (!ok) return false;
     }

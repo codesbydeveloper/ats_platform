@@ -33,6 +33,7 @@ export const teacherFormSchema = z
     areaOfInterest: z.string().min(2, "Required"),
     currentSalary: z.coerce.number().min(0, "Must be positive"),
     experienceYears: z.coerce.number().min(0).max(50),
+    status: z.enum(["active", "inactive", "pending"]),
     workHistory: z.array(workSchema).min(1, "Add at least one role"),
     resumeFileName: z.string().nullable(),
     resumeMime: z.string().nullable(),

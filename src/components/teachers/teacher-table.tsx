@@ -9,8 +9,10 @@ import {
   useReactTable,
   type ColumnDef,
   type OnChangeFn,
+  type PaginationState,
   type RowSelectionState,
   type SortingState,
+  type Updater,
   type VisibilityState,
 } from "@tanstack/react-table";
 import {
@@ -42,7 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { Teacher } from "@/types/teacher";
+import type { Teacher, TeacherStatus } from "@/types/teacher";
 import { cn } from "@/lib/utils";
 
 const statusVariant: Record<
@@ -54,15 +56,31 @@ const statusVariant: Record<
   pending: "outline",
 };
 
+/** Next status when user clicks the badge (active ↔ inactive; pending → active). */
+function toggledEmploymentStatus(current: TeacherStatus): TeacherStatus {
+  return current === "active" ? "inactive" : "active";
+}
+
 interface TeacherTableProps {
   data: Teacher[];
   onView: (teacher: Teacher) => void;
   onEdit: (teacher: Teacher) => void;
   onDelete: (teacher: Teacher) => void;
   onDownloadResume: (teacher: Teacher) => void;
+  /** Click status badge to flip active ↔ inactive (calls edit API from parent when signed in). */
+  onStatusToggle?: (teacher: Teacher) => void;
+  statusBusyId?: string | null;
   rowSelection: RowSelectionState;
   onRowSelectionChange: OnChangeFn<RowSelectionState>;
   compact?: boolean;
+  /** Server-driven pages — data is one page only; Prev/Next hit the API */
+  serverPagination?: {
+    pageIndex: number;
+    pageSize: number;
+    pageCount: number;
+    totalCount: number;
+    onPageChange: (pageIndex: number, pageSize: number) => void;
+  };
 }
 
 export function TeacherTable({
@@ -71,9 +89,12 @@ export function TeacherTable({
   onEdit,
   onDelete,
   onDownloadResume,
+  onStatusToggle,
+  statusBusyId,
   rowSelection,
   onRowSelectionChange,
   compact,
+  serverPagination,
 }: TeacherTableProps) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: "createdAt", desc: true },
@@ -106,22 +127,19 @@ export function TeacherTable({
         size: 36,
       },
       {
-        accessorKey: "id",
-        header: ({ column }) => (
-          <Button
-            variant="ghost"
-            className="-ml-3 h-8 px-2 text-xs font-medium"
-            onClick={() =>
-              column.toggleSorting(column.getIsSorted() === "asc")
-            }
-          >
-            Teacher ID
-            <ArrowUpDown className="ml-1 h-3 w-3" />
-          </Button>
-        ),
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">{row.original.id}</span>
-        ),
+        id: "srNo",
+        header: "Sr. No.",
+        cell: ({ row, table }) => {
+          const { pageIndex, pageSize } = table.getState().pagination;
+          const sr = pageIndex * pageSize + row.index + 1;
+          return (
+            <span className="font-mono text-xs tabular-nums text-muted-foreground">
+              {sr}
+            </span>
+          );
+        },
+        enableSorting: false,
+        size: 56,
       },
       {
         accessorKey: "name",
@@ -188,11 +206,32 @@ export function TeacherTable({
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ row }) => (
-          <Badge variant={statusVariant[row.original.status]}>
-            {row.original.status}
-          </Badge>
-        ),
+        cell: ({ row }) => {
+          const t = row.original;
+          const busy = statusBusyId === t.id;
+          const next = toggledEmploymentStatus(t.status);
+          if (!onStatusToggle) {
+            return (
+              <Badge variant={statusVariant[t.status]}>{t.status}</Badge>
+            );
+          }
+          return (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onStatusToggle(t)}
+              className="inline-flex rounded-full border-0 bg-transparent p-0 disabled:pointer-events-none disabled:opacity-50"
+              aria-label={`${t.status} — click to set ${next}`}
+            >
+              <Badge
+                variant={statusVariant[t.status]}
+                className="cursor-pointer select-none hover:opacity-90"
+              >
+                {t.status}
+              </Badge>
+            </button>
+          );
+        },
       },
       {
         accessorKey: "createdAt",
@@ -256,8 +295,19 @@ export function TeacherTable({
         },
       },
     ],
-    [onView, onEdit, onDelete, onDownloadResume]
+    [onView, onEdit, onDelete, onDownloadResume, onStatusToggle, statusBusyId]
   );
+
+  const resolvePagination = (updater: Updater<PaginationState>) => {
+    if (!serverPagination) return;
+    const current: PaginationState = {
+      pageIndex: serverPagination.pageIndex,
+      pageSize: serverPagination.pageSize,
+    };
+    const next =
+      typeof updater === "function" ? updater(current) : updater;
+    serverPagination.onPageChange(next.pageIndex, next.pageSize);
+  };
 
   const table = useReactTable({
     data,
@@ -267,6 +317,14 @@ export function TeacherTable({
       sorting,
       columnVisibility,
       rowSelection,
+      ...(serverPagination
+        ? {
+            pagination: {
+              pageIndex: serverPagination.pageIndex,
+              pageSize: serverPagination.pageSize,
+            },
+          }
+        : {}),
     },
     onSortingChange: setSorting,
     onColumnVisibilityChange: setColumnVisibility,
@@ -274,8 +332,18 @@ export function TeacherTable({
     enableRowSelection: true,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 10 } },
+    ...(serverPagination
+      ? {
+          manualPagination: true,
+          pageCount: Math.max(1, serverPagination.pageCount),
+          onPaginationChange: resolvePagination,
+        }
+      : {
+          getPaginationRowModel: getPaginationRowModel(),
+        }),
+    initialState: serverPagination
+      ? undefined
+      : { pagination: { pageSize: 10 } },
   });
 
   return (
@@ -364,8 +432,18 @@ export function TeacherTable({
       </div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
-          Page {table.getState().pagination.pageIndex + 1} of{" "}
-          {table.getPageCount() || 1} · {data.length} rows
+          {serverPagination ? (
+            <>
+              Page {serverPagination.pageIndex + 1} of{" "}
+              {Math.max(1, serverPagination.pageCount)} ·{" "}
+              {serverPagination.totalCount} total
+            </>
+          ) : (
+            <>
+              Page {table.getState().pagination.pageIndex + 1} of{" "}
+              {table.getPageCount() || 1} · {data.length} rows
+            </>
+          )}
         </p>
         <div className="flex gap-2">
           <Button

@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/table";
 import { buildSampleTemplateWorkbook } from "@/utils/export-teachers";
 import { rowToTeacher, type ParsedRow } from "@/utils/parse-imported-rows";
+import { importTeachersFileRequest } from "@/lib/teachers-api";
+import { useAuthStore } from "@/store/auth-store";
 import type { Teacher } from "@/types/teacher";
 
 interface ImportExcelModalProps {
@@ -32,6 +34,8 @@ interface ImportExcelModalProps {
   onOpenChange: (open: boolean) => void;
   teachers: Teacher[];
   onImport: (teachers: Teacher[]) => void;
+  /** After a successful server-side import (signed-in users). */
+  onAfterApiImport?: () => void;
 }
 
 export function ImportExcelModal({
@@ -39,19 +43,24 @@ export function ImportExcelModal({
   onOpenChange,
   teachers,
   onImport,
+  onAfterApiImport,
 }: ImportExcelModalProps) {
+  const accessToken = useAuthStore((s) => s.accessToken);
   const [rows, setRows] = useState<ParsedRow[]>([]);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
 
   const reset = () => {
     setRows([]);
+    setSelectedFile(null);
     setProgress(0);
     setBusy(false);
   };
 
   const parseFile = useCallback(
     (file: File) => {
+      setSelectedFile(file);
       const reader = new FileReader();
       reader.onload = () => {
         try {
@@ -98,6 +107,26 @@ export function ImportExcelModal({
   };
 
   const runImport = async () => {
+    if (accessToken && selectedFile) {
+      setBusy(true);
+      setProgress(15);
+      const result = await importTeachersFileRequest(accessToken, selectedFile);
+      setProgress(100);
+      setBusy(false);
+      if (!result.ok) {
+        setProgress(0);
+        toast.error("Import failed", { description: result.message });
+        return;
+      }
+      toast.success("Import complete", {
+        description: "Your file was sent to the server.",
+      });
+      onAfterApiImport?.();
+      reset();
+      onOpenChange(false);
+      return;
+    }
+
     const valid = rows
       .map((r) => r.teacher)
       .filter((t): t is Teacher => Boolean(t));
@@ -120,6 +149,10 @@ export function ImportExcelModal({
     onOpenChange(false);
   };
 
+  const importDisabled =
+    busy ||
+    (accessToken ? !selectedFile : !rows.some((r) => r.teacher));
+
   return (
     <Dialog
       open={open}
@@ -137,6 +170,13 @@ export function ImportExcelModal({
           <DialogDescription>
             Upload CSV or XLSX. We validate rows, flag duplicates, and let you
             preview before committing.
+            {accessToken ? (
+              <>
+                {" "}
+                While signed in, <strong>Import to server</strong> uploads your
+                file for bulk import on the API.
+              </>
+            ) : null}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap gap-2">
@@ -212,10 +252,10 @@ export function ImportExcelModal({
           </Button>
           <Button
             type="button"
-            disabled={busy || !rows.some((r) => r.teacher)}
+            disabled={importDisabled}
             onClick={runImport}
           >
-            Import valid rows
+            {accessToken ? "Import to server" : "Import valid rows"}
           </Button>
         </DialogFooter>
       </DialogContent>

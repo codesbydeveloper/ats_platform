@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { GraduationCap, LayoutDashboard, Settings } from "lucide-react";
+import { GraduationCap } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,14 +13,9 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
+import { MAIN_NAV_LINKS } from "@/config/navigation";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/store/ui-store";
-
-const links = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/teachers", label: "Teachers", icon: GraduationCap },
-  { href: "/settings", label: "Settings", icon: Settings },
-];
 
 export function MobileSidebar() {
   const open = useUiStore((s) => s.mobileNavOpen);
@@ -39,7 +34,7 @@ export function MobileSidebar() {
           </SheetTitle>
         </SheetHeader>
         <nav className="flex flex-col gap-1 p-3">
-          {links.map(({ href, label, icon: Icon }) => {
+          {MAIN_NAV_LINKS.map(({ href, label, icon: Icon }) => {
             const active =
               pathname === href || pathname.startsWith(`${href}/`);
             return (
