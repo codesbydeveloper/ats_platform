@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Filter, Loader2, RotateCcw } from "lucide-react";
 
 import { SearchableMultiSelect } from "@/components/shared/searchable-multi-select";
@@ -27,11 +27,6 @@ import {
   type TeacherFilters,
 } from "@/store/filter-store";
 import { useAuthStore } from "@/store/auth-store";
-import { useTeacherStore } from "@/store/teacher-store";
-
-function uniq(values: string[]) {
-  return Array.from(new Set(values));
-}
 
 interface FilterDrawerProps {
   open: boolean;
@@ -42,7 +37,6 @@ export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const replaceFilters = useFilterStore((s) => s.replaceFilters);
   const resetFilters = useFilterStore((s) => s.resetFilters);
-  const teachers = useTeacherStore((s) => s.teachers);
 
   const [local, setLocal] = useState<TeacherFilters>(() =>
     useFilterStore.getState().filters
@@ -81,14 +75,6 @@ export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
     replaceFilters(local);
     onOpenChange(false);
   };
-
-  const cityOptions = useMemo(() => {
-    const list = new Set<string>();
-    teachers.forEach((t) => {
-      if (t.city && t.city !== "—") list.add(t.city);
-    });
-    return uniq([...list]).sort();
-  }, [teachers]);
 
   return (
     <Sheet
@@ -142,20 +128,6 @@ export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
                   />
                 ))
             )}
-            {cityOptions.length > 0 ? (
-              <SearchableMultiSelect
-                label="City"
-                options={cityOptions}
-                selected={local.cities}
-                onChange={(cities) => setLocal((p) => ({ ...p, cities }))}
-              />
-            ) : null}
-            <SearchableMultiSelect
-              label="Employment status"
-              options={["active", "inactive", "pending"]}
-              selected={local.status}
-              onChange={(status) => setLocal((p) => ({ ...p, status }))}
-            />
           </div>
         </ScrollArea>
         <SheetFooter className="gap-2 border-t pt-4">
