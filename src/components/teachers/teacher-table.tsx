@@ -19,6 +19,7 @@ import {
   ArrowUpDown,
   Download,
   Eye,
+  Loader2,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -70,6 +71,7 @@ interface TeacherTableProps {
   /** Click status badge to flip active ↔ inactive (calls edit API from parent when signed in). */
   onStatusToggle?: (teacher: Teacher) => void;
   statusBusyId?: string | null;
+  resumeDownloadBusyId?: string | null;
   rowSelection: RowSelectionState;
   onRowSelectionChange: OnChangeFn<RowSelectionState>;
   compact?: boolean;
@@ -91,6 +93,7 @@ export function TeacherTable({
   onDownloadResume,
   onStatusToggle,
   statusBusyId,
+  resumeDownloadBusyId,
   rowSelection,
   onRowSelectionChange,
   compact,
@@ -277,8 +280,15 @@ export function TeacherTable({
                   <Pencil className="mr-2 h-4 w-4" />
                   Edit
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onDownloadResume(t)}>
-                  <Download className="mr-2 h-4 w-4" />
+                <DropdownMenuItem
+                  disabled={resumeDownloadBusyId === t.id}
+                  onClick={() => onDownloadResume(t)}
+                >
+                  {resumeDownloadBusyId === t.id ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-2 h-4 w-4" />
+                  )}
                   Download resume
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -295,7 +305,15 @@ export function TeacherTable({
         },
       },
     ],
-    [onView, onEdit, onDelete, onDownloadResume, onStatusToggle, statusBusyId]
+    [
+      onView,
+      onEdit,
+      onDelete,
+      onDownloadResume,
+      onStatusToggle,
+      statusBusyId,
+      resumeDownloadBusyId,
+    ]
   );
 
   const resolvePagination = (updater: Updater<PaginationState>) => {

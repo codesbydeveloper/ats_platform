@@ -35,6 +35,11 @@ export function ActivityFeed({
       </CardHeader>
       <CardContent className="pt-0">
         <ScrollArea className="h-[280px] pr-3">
+          {items.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No activity yet.
+            </p>
+          ) : (
           <ul className="space-y-3">
             {items.map((item, i) => {
               const Icon = iconMap[item.type];
@@ -57,6 +62,7 @@ export function ActivityFeed({
               );
             })}
           </ul>
+          )}
         </ScrollArea>
       </CardContent>
     </Card>

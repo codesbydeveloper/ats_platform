@@ -766,6 +766,59 @@ async function readExportError(res: Response): Promise<string> {
   return text;
 }
 
+export type DownloadTeacherResumeResult =
+  | { ok: true; filename: string }
+  | { ok: false; message: string };
+
+/**
+ * GET /api/teachers/:id/resume/download — follows redirects (curl -L).
+ */
+export async function downloadTeacherResumeRequest(
+  accessToken: string | null,
+  teacherId: string,
+  fallbackFileName?: string | null
+): Promise<DownloadTeacherResumeResult> {
+  if (!accessToken) {
+    return {
+      ok: false,
+      message: "Sign in to download resumes from the server.",
+    };
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_BASE}/api/teachers/${encodeURIComponent(teacherId)}/resume/download`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        redirect: "follow",
+      }
+    );
+  } catch {
+    return {
+      ok: false,
+      message: `Could not reach API at ${API_BASE}. Is the server running?`,
+    };
+  }
+
+  if (!res.ok) {
+    return { ok: false, message: await readExportError(res) };
+  }
+
+  const buf = await res.arrayBuffer();
+  const fromHeader = filenameFromContentDisposition(
+    res.headers.get("Content-Disposition")
+  );
+  const fallback =
+    fallbackFileName?.trim() || `teacher-${teacherId}-resume.docx`;
+  const filename = (fromHeader ?? fallback).replace(/[/\\]/g, "_");
+  const contentType =
+    res.headers.get("Content-Type") ?? "application/octet-stream";
+  const blob = new Blob([buf], { type: contentType });
+  triggerBlobDownload(blob, filename);
+  return { ok: true, filename };
+}
+
 export type ExportTeachersFromApiResult =
   | { ok: true; filename: string }
   | { ok: false; message: string };

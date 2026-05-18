@@ -52,6 +52,7 @@ import { useFilterStore } from "@/store/filter-store";
 import {
   bulkDeleteTeachersRequest,
   deleteTeacherRequest,
+  downloadTeacherResumeRequest,
   exportTeachersFromApi,
   getTeacherRequest,
   listTeachersRequest,
@@ -211,6 +212,7 @@ export function TeachersView() {
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Teacher | null>(null);
   const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [resumeDownloadId, setResumeDownloadId] = useState<string | null>(null);
 
   const [pageIndex, setPageIndex] = useState(0);
   const [fetchKey, setFetchKey] = useState(0);
@@ -585,14 +587,30 @@ export function TeachersView() {
           onEdit={openEdit}
           onDelete={(t) => setDeleteTarget(t)}
           onDownloadResume={(t) => {
-            if (!t.resumeFileName) {
-              toast.error("No resume on file");
-              return;
-            }
-            toast.success("Resume ready", {
-              description: `${t.resumeFileName} · demo download`,
-            });
+            void (async () => {
+              if (!accessToken) {
+                toast.error("Sign in to download resume");
+                return;
+              }
+              setResumeDownloadId(t.id);
+              const result = await downloadTeacherResumeRequest(
+                accessToken,
+                t.id,
+                t.resumeFileName
+              );
+              setResumeDownloadId(null);
+              if (!result.ok) {
+                toast.error("Download failed", {
+                  description: result.message,
+                });
+                return;
+              }
+              toast.success("Resume downloaded", {
+                description: result.filename,
+              });
+            })();
           }}
+          resumeDownloadBusyId={resumeDownloadId}
         />
       )}
 
