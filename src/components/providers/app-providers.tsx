@@ -5,6 +5,7 @@ import { useTheme } from "next-themes";
 import { ThemeProvider as NextThemesProvider } from "next-themes";
 import { Toaster } from "sonner";
 
+import { AuthSessionSync } from "@/components/auth/auth-session-sync";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useStoresHydrated } from "@/hooks/use-stores-hydrated";
@@ -50,6 +51,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
         {hydrated ? (
           <>
             <ThemePreferenceSync />
+            <AuthSessionSync />
             {children}
           </>
         ) : (

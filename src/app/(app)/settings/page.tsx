@@ -1,8 +1,10 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { Monitor, Moon, Palette, Sun, User } from "lucide-react";
+import { Monitor, Moon, Palette, Sun } from "lucide-react";
 
+import { ChangePasswordCard } from "@/components/settings/change-password-card";
+import { ProfileSettingsCard } from "@/components/settings/profile-settings-card";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,9 +14,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useAuthStore } from "@/store/auth-store";
 import { useUiStore, type ThemePreference } from "@/store/ui-store";
 
 const themeOptions: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
@@ -23,8 +22,15 @@ const themeOptions: { value: ThemePreference; label: string; icon: typeof Sun }[
   { value: "system", label: "System", icon: Monitor },
 ];
 
+const SECTION_LINKS = [
+  { href: "#profile", label: "Profile" },
+  { href: "#change-password", label: "Change password" },
+  { href: "#theme", label: "Theme" },
+] as const;
+
+const sectionScrollClass = "scroll-mt-24";
+
 export default function SettingsPage() {
-  const user = useAuthStore((s) => s.user);
   const { setTheme } = useTheme();
   const themePreference = useUiStore((s) => s.themePreference);
   const setThemePreference = useUiStore((s) => s.setThemePreference);
@@ -35,56 +41,57 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
+    <div className="mx-auto max-w-3xl space-y-8 pb-12">
       <PageHeader
         title="Settings"
-        description="Tune how ATS Teachers feels in your browser. Everything persists locally."
-      />
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <User className="h-4 w-4" />
-            Profile
-          </CardTitle>
-          <CardDescription>Read-only snapshot from your session.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="name">Display name</Label>
-            <Input id="name" readOnly value={user?.name ?? ""} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" readOnly value={user?.email ?? ""} />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Palette className="h-4 w-4" />
-            Theme
-          </CardTitle>
-          <CardDescription>Controls light, dark, or system appearance.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          {themeOptions.map(({ value, label, icon: Icon }) => (
-            <Button
-              key={value}
-              type="button"
-              size="sm"
-              variant={themePreference === value ? "default" : "outline"}
-              className="gap-2"
-              onClick={() => applyTheme(value)}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
+        description="Edit your profile, change your password, and pick a theme."
+      >
+        <nav
+          className="flex flex-wrap gap-2"
+          aria-label="Jump to a settings section"
+        >
+          {SECTION_LINKS.map(({ href, label }) => (
+            <Button key={href} variant="outline" size="sm" asChild>
+              <a href={href}>{label}</a>
             </Button>
           ))}
-        </CardContent>
-      </Card>
+        </nav>
+      </PageHeader>
+
+      <section id="profile" className={sectionScrollClass}>
+        <ProfileSettingsCard />
+      </section>
+
+      <section id="change-password" className={sectionScrollClass}>
+        <ChangePasswordCard />
+      </section>
+
+      <section id="theme" className={sectionScrollClass}>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Palette className="h-4 w-4" />
+              Theme
+            </CardTitle>
+            <CardDescription>Controls light, dark, or system appearance.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {themeOptions.map(({ value, label, icon: Icon }) => (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant={themePreference === value ? "default" : "outline"}
+                className="gap-2"
+                onClick={() => applyTheme(value)}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </Button>
+            ))}
+          </CardContent>
+        </Card>
+      </section>
     </div>
   );
 }

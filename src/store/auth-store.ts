@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { signInRequest, logoutRequest } from "@/lib/auth-api";
+import { getMeRequest, signInRequest, logoutRequest } from "@/lib/auth-api";
 import type { AuthUser } from "@/types/auth";
 
 export type { AuthUser } from "@/types/auth";
@@ -22,6 +22,9 @@ interface AuthState {
     remember: boolean
   ) => Promise<LoginOutcome>;
   logout: () => Promise<void>;
+  /** Sync user from GET /api/auth/me */
+  refreshSession: () => Promise<LoginOutcome>;
+  setUser: (user: AuthUser) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -49,8 +52,28 @@ export const useAuthStore = create<AuthState>()(
           accessToken: result.accessToken,
           remember,
         });
+        if (result.accessToken) {
+          const me = await getMeRequest(result.accessToken);
+          if (me.ok) {
+            set({ user: me.data.user });
+          }
+        }
         return { ok: true };
       },
+      refreshSession: async () => {
+        const token = get().accessToken;
+        if (!token) {
+          return { ok: false, message: "Not signed in." };
+        }
+        const me = await getMeRequest(token);
+        if (!me.ok) {
+          set({ user: null, accessToken: null });
+          return { ok: false, message: me.message };
+        }
+        set({ user: me.data.user });
+        return { ok: true };
+      },
+      setUser: (user) => set({ user }),
       logout: async () => {
         const token = get().accessToken;
         if (token) {

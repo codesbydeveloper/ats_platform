@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { AppProviders } from "@/components/providers/app-providers";
+import { TREE_LEARNING_LOGO_SRC } from "@/config/brand";
 
 import "./globals.css";
 
@@ -19,6 +20,10 @@ export const metadata: Metadata = {
   title: "Tree Learning | Teacher management",
   description:
     "Teacher hiring workspace with roster tools, analytics, and imports — Tree Learning.",
+  icons: {
+    icon: [{ url: TREE_LEARNING_LOGO_SRC, type: "image/png" }],
+    apple: [{ url: TREE_LEARNING_LOGO_SRC, type: "image/png" }],
+  },
 };
 
 export default function RootLayout({

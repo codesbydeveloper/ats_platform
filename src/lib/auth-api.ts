@@ -53,25 +53,59 @@ function pickUser(
     (typeof u.name === "string" && u.name) ||
     (typeof u.fullName === "string" && u.fullName) ||
     (typeof u.full_name === "string" && u.full_name) ||
-    email.split("@")[0] ||
+    (email ? email.split("@")[0] : "") ||
     "User";
 
-  return { email: email.trim(), name };
+  const idRaw = u.id ?? u.user_id;
+  const id =
+    idRaw != null && String(idRaw).length > 0 ? String(idRaw) : undefined;
+
+  const number =
+    (typeof u.number === "string" && u.number) ||
+    (typeof u.phone === "string" && u.phone) ||
+    (typeof u.mobile === "string" && u.mobile) ||
+    undefined;
+
+  return {
+    id,
+    email: email.trim(),
+    name: name.trim() || "User",
+    number: number?.trim() || undefined,
+  };
 }
 
-function errorMessage(data: unknown, status: number): string {
+function apiErrorMessage(data: unknown, status: number, fallback: string): string {
   if (!data || typeof data !== "object" || Array.isArray(data)) {
-    return `Sign in failed (${status})`;
+    return `${fallback} (${status})`;
   }
   const d = data as Record<string, unknown>;
+  if (typeof d.detail === "string") return d.detail;
   if (typeof d.message === "string") return d.message;
   if (Array.isArray(d.message)) {
     return d.message.map(String).join(", ");
   }
   if (typeof d.error === "string") return d.error;
-  if (typeof d.detail === "string") return d.detail;
-  return `Sign in failed (${status})`;
+  return `${fallback} (${status})`;
 }
+
+function errorMessage(data: unknown, status: number): string {
+  return apiErrorMessage(data, status, "Sign in failed");
+}
+
+function bearerHeaders(accessToken: string): HeadersInit {
+  return { Authorization: `Bearer ${accessToken}` };
+}
+
+function authHeaders(accessToken: string): HeadersInit {
+  return {
+    ...bearerHeaders(accessToken),
+    "Content-Type": "application/json",
+  };
+}
+
+export type ApiResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; message: string };
 
 /** POST /api/auth/signin — JSON { email, password } */
 export async function signInRequest(
@@ -111,6 +145,120 @@ export async function signInRequest(
   const user = pickUser(data, trimmed);
 
   return { ok: true, user, accessToken };
+}
+
+/** GET /api/auth/me */
+export async function getMeRequest(
+  accessToken: string
+): Promise<ApiResult<{ user: AuthUser }>> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/auth/me`, {
+      headers: bearerHeaders(accessToken),
+    });
+  } catch {
+    return {
+      ok: false,
+      message: `Could not reach API at ${API_BASE}. Is the server running?`,
+    };
+  }
+
+  let data: Record<string, unknown> = {};
+  try {
+    const json = await res.json();
+    if (json && typeof json === "object" && !Array.isArray(json)) {
+      data = json as Record<string, unknown>;
+    }
+  } catch {
+    /* non-JSON */
+  }
+
+  if (!res.ok) {
+    return { ok: false, message: apiErrorMessage(data, res.status, "Request failed") };
+  }
+
+  return { ok: true, data: { user: pickUser(data, "") } };
+}
+
+/** PATCH /api/auth/profile — { name, email } */
+export async function updateProfileRequest(
+  accessToken: string,
+  profile: { name: string; email: string }
+): Promise<ApiResult<{ user: AuthUser }>> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/auth/profile`, {
+      method: "PATCH",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify({
+        name: profile.name.trim(),
+        email: profile.email.trim(),
+      }),
+    });
+  } catch {
+    return {
+      ok: false,
+      message: `Could not reach API at ${API_BASE}. Is the server running?`,
+    };
+  }
+
+  let data: Record<string, unknown> = {};
+  try {
+    const json = await res.json();
+    if (json && typeof json === "object" && !Array.isArray(json)) {
+      data = json as Record<string, unknown>;
+    }
+  } catch {
+    /* non-JSON */
+  }
+
+  if (!res.ok) {
+    return { ok: false, message: apiErrorMessage(data, res.status, "Could not save profile") };
+  }
+
+  return { ok: true, data: { user: pickUser(data, profile.email) } };
+}
+
+/** POST /api/auth/change-password */
+export async function changePasswordRequest(
+  accessToken: string,
+  currentPassword: string,
+  newPassword: string
+): Promise<ApiResult<{ message: string }>> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/auth/change-password`, {
+      method: "POST",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  } catch {
+    return {
+      ok: false,
+      message: `Could not reach API at ${API_BASE}. Is the server running?`,
+    };
+  }
+
+  let data: Record<string, unknown> = {};
+  try {
+    const json = await res.json();
+    if (json && typeof json === "object" && !Array.isArray(json)) {
+      data = json as Record<string, unknown>;
+    }
+  } catch {
+    /* non-JSON */
+  }
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      message: apiErrorMessage(data, res.status, "Could not update password"),
+    };
+  }
+
+  const message =
+    (typeof data.message === "string" && data.message) || "Password updated";
+  return { ok: true, data: { message } };
 }
 
 /** POST /api/auth/logout — Authorization: Bearer <token> */

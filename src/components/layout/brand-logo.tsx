@@ -2,14 +2,18 @@
 
 import Image from "next/image";
 
+import { TREE_LEARNING_LOGO_SRC } from "@/config/brand";
 import { cn } from "@/lib/utils";
 
-/** Public asset — horizontal Tree Learning mark (`public/treelearning_logo.png`). */
-export const TREE_LEARNING_LOGO_SRC = "/treelearning_logo.png";
+export { TREE_LEARNING_LOGO_SRC };
 
-/** No fill behind the image so it sits cleanly on the sidebar / login surfaces. */
-const baseWrap =
-  "inline-flex items-center justify-center bg-transparent px-0 py-0";
+/** Light surface in dark theme — logo PNG has a dark matte + dark grey wordmark. */
+const logoShell =
+  "inline-flex items-center justify-center rounded-lg bg-transparent px-0 py-0 dark:bg-white dark:px-2.5 dark:py-1 dark:shadow-sm dark:ring-1 dark:ring-white/10";
+
+/** Lift wordmark contrast on the white dark-mode shell without washing out greens. */
+const logoImgDark =
+  "dark:brightness-[1.85] dark:contrast-[1.05] dark:saturate-110";
 
 type BrandLogoVariant =
   | "header"
@@ -25,12 +29,18 @@ type BrandLogoProps = {
 };
 
 const imgClass: Record<Exclude<BrandLogoVariant, "login-hero">, string> = {
-  header:
+  header: cn(
     "h-8 w-auto max-w-[min(180px,38vw)] object-contain object-left sm:h-9 md:h-10",
-  sheet:
+    logoImgDark
+  ),
+  sheet: cn(
     "h-14 w-auto max-w-[min(280px,calc(100%-1rem))] object-contain object-left sm:h-16",
-  "login-form":
+    logoImgDark
+  ),
+  "login-form": cn(
     "h-10 w-auto max-w-[200px] object-contain object-left sm:h-11",
+    logoImgDark
+  ),
 };
 
 function LoginHeroMark({ className }: { className?: string }) {
@@ -63,7 +73,7 @@ export function BrandLogo({ variant, className, wrapClassName }: BrandLogoProps)
   }
 
   return (
-    <span className={cn(baseWrap, wrapClassName, className)}>
+    <span className={cn(logoShell, wrapClassName, className)}>
       <Image
         src={TREE_LEARNING_LOGO_SRC}
         alt="Tree Learning"

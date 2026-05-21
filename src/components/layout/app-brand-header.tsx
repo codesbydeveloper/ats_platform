@@ -7,6 +7,7 @@ import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
 import { BrandLogo } from "@/components/layout/brand-logo";
+import { useEffectiveTheme } from "@/hooks/use-effective-theme";
 import { MobileSidebarTrigger } from "@/components/layout/mobile-sidebar";
 import { SearchInput } from "@/components/shared/search-input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -31,9 +32,10 @@ export function AppBrandHeader() {
   const logout = useAuthStore((s) => s.logout);
   const search = useFilterStore((s) => s.filters.search);
   const setFilters = useFilterStore((s) => s.setFilters);
-  const { setTheme, resolvedTheme } = useTheme();
+  const { setTheme } = useTheme();
   const themePreference = useUiStore((s) => s.themePreference);
   const setThemePreference = useUiStore((s) => s.setThemePreference);
+  const { preference, effective, mounted } = useEffectiveTheme();
 
   const cycleTheme = () => {
     const order = ["light", "dark", "system"] as const;
@@ -46,11 +48,17 @@ export function AppBrandHeader() {
   };
 
   const themeIcon =
-    resolvedTheme === "dark" ? (
-      <Moon className="h-4 w-4" />
+    !mounted || effective === "light" ? (
+      <Sun className="h-4 w-4" aria-hidden />
     ) : (
-      <Sun className="h-4 w-4" />
+      <Moon className="h-4 w-4" aria-hidden />
     );
+
+  const themeAriaLabel = !mounted
+    ? "Toggle theme"
+    : preference === "system"
+      ? `Theme: system (${effective === "dark" ? "dark" : "light"}). Click to change.`
+      : `Theme: ${preference}. Click to change.`;
 
   const accountLabel = "Tree Learning";
 
@@ -87,7 +95,8 @@ export function AppBrandHeader() {
             variant="ghost"
             size="icon"
             className="h-9 w-9 text-muted-foreground hover:text-foreground"
-            aria-label="Toggle theme"
+            aria-label={themeAriaLabel}
+            title={themeAriaLabel}
             onClick={cycleTheme}
           >
             {themeIcon}
