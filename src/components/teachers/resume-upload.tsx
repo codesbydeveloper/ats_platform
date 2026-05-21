@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { FileText, Upload, UploadCloud, X } from "lucide-react";
+import { FileText, Loader2, Upload, UploadCloud, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -148,9 +148,11 @@ export function ResumeUpload({
 interface ResumeQuickUploadProps {
   fileName: string | null;
   onChange: (next: { fileName: string | null; mime: string | null }) => void;
-  /** Raw file for API uploads (local-only roster does not need it). */
-  onFileSelected?: (file: File | null) => void;
+  /** Raw file for API uploads / parse-resume. May be async. */
+  onFileSelected?: (file: File | null) => void | Promise<void>;
   disabled?: boolean;
+  /** Show spinner on the upload button while parse-resume runs. */
+  parsing?: boolean;
 }
 
 /** Compact resume picker for headers / toolbars (same rules as ResumeUpload). */
@@ -159,6 +161,7 @@ export function ResumeQuickUpload({
   onChange,
   onFileSelected,
   disabled,
+  parsing,
 }: ResumeQuickUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -170,12 +173,18 @@ export function ResumeQuickUpload({
           variant="outline"
           size="sm"
           className="gap-2"
-          disabled={disabled}
+          disabled={disabled || parsing}
           onClick={() => inputRef.current?.click()}
         >
-          <Upload className="h-4 w-4 shrink-0" />
-          <span className="hidden sm:inline">Upload resume</span>
-          <span className="sm:hidden">Resume</span>
+          {parsing ? (
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+          ) : (
+            <Upload className="h-4 w-4 shrink-0" />
+          )}
+          <span className="hidden sm:inline">
+            {parsing ? "Reading resume…" : "Upload resume"}
+          </span>
+          <span className="sm:hidden">{parsing ? "Reading…" : "Resume"}</span>
         </Button>
         <input
           ref={inputRef}
@@ -183,7 +192,7 @@ export function ResumeQuickUpload({
           className="sr-only"
           accept={ACCEPT}
           tabIndex={-1}
-          onChange={(e) => {
+          onChange={async (e) => {
             const file = e.target.files?.[0];
             e.target.value = "";
             if (!file) return;
@@ -197,8 +206,19 @@ export function ResumeQuickUpload({
               fileName: file.name,
               mime: file.type || "application/octet-stream",
             });
-            onFileSelected?.(file);
-            toast.success("Resume attached", { description: file.name });
+            if (onFileSelected) {
+              try {
+                await onFileSelected(file);
+              } catch (err) {
+                console.error(err);
+                toast.error("Resume upload failed", {
+                  description:
+                    err instanceof Error ? err.message : "Try again.",
+                });
+              }
+            } else {
+              toast.success("Resume attached", { description: file.name });
+            }
           }}
         />
         {fileName ? (

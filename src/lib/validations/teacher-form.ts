@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+const extraEducationSchema = z.object({
+  id: z.string(),
+  value: z.string(),
+});
+
 const workSchema = z.object({
   id: z.string(),
   schoolName: z.string().min(1, "School name is required"),
@@ -24,6 +29,8 @@ export const teacherFormSchema = z
     pgUniversity: z.string().min(2, "PG university is required"),
     qualification: z.string().min(2, "Qualification is required"),
     certifications: z.string().optional(),
+    /** One free-text line per “Add more” click under Educational details. */
+    extraEducation: z.array(extraEducationSchema).optional(),
     subject: z.string().min(1, "Subject is required"),
     boards: z.array(z.string()).min(1, "Select at least one board"),
     grades: z.array(z.string()).min(1, "Select at least one grade band"),

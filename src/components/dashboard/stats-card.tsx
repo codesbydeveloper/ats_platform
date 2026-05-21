@@ -31,22 +31,24 @@ export function StatsCard({
       whileHover={{ y: -2 }}
       className={cn("h-full", className)}
     >
-      <Card className="h-full border bg-card/80 shadow-sm backdrop-blur">
+      <Card className="h-full">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">
             {title}
           </CardTitle>
-          <span className="rounded-lg bg-primary/10 p-2 text-primary">
+          <span className="rounded-xl bg-primary/12 p-2.5 text-primary">
             <Icon className="h-4 w-4" />
           </span>
         </CardHeader>
         <CardContent>
-          <div className="text-3xl font-semibold tracking-tight">{value}</div>
+          <div className="text-3xl font-semibold tracking-tight text-foreground">
+            {value}
+          </div>
           {hint ? (
             <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
           ) : null}
           {trend ? (
-            <p className="mt-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+            <p className="mt-2 text-xs font-medium text-primary">
               {trend}
             </p>
           ) : null}

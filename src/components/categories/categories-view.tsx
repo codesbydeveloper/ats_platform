@@ -83,7 +83,7 @@ function CategoryNameEditor({
     if (disabled || saving) return;
     const next = draft.trim();
     if (!next) {
-      toast.error("Category name required", {
+      toast.error("Group name required", {
         description: "Name cannot be empty.",
       });
       return;
@@ -100,12 +100,12 @@ function CategoryNameEditor({
     );
     setSaving(false);
     if (!res.ok) {
-      toast.error("Could not rename category", {
+      toast.error("Could not rename group", {
         description: res.message,
       });
       return;
     }
-    toast.success("Category renamed");
+    toast.success("Group renamed");
     setIsEditing(false);
     await onRenamed();
   };
@@ -144,7 +144,7 @@ function CategoryNameEditor({
             }}
             disabled={disabled || saving}
             className="h-9 min-w-0 flex-1 sm:max-w-[min(100%,20rem)]"
-            aria-label="Category name"
+            aria-label="Group name"
             autoFocus
           />
           <Button
@@ -210,7 +210,7 @@ function SubcategoryNameEditor({
     if (removing || saving || mutating) return;
     const next = draft.trim();
     if (!next) {
-      toast.error("Sub-item name required");
+      toast.error("Option name required");
       return;
     }
     if (next === sub.name) {
@@ -221,12 +221,12 @@ function SubcategoryNameEditor({
     const res = await updateCategoryRequest(accessToken, sub.id, next);
     setSaving(false);
     if (!res.ok) {
-      toast.error("Could not rename sub-item", {
+      toast.error("Could not rename option", {
         description: res.message,
       });
       return;
     }
-    toast.success("Sub-item renamed");
+    toast.success("Option renamed");
     setIsEditing(false);
     await onRenamed();
   };
@@ -254,7 +254,7 @@ function SubcategoryNameEditor({
             }}
             disabled={removing || saving || mutating}
             className="h-9 min-w-0 flex-1 bg-background sm:max-w-md"
-            aria-label={`Sub-item ${sub.name}`}
+            aria-label={`Option ${sub.name}`}
             autoFocus
           />
         )}
@@ -354,7 +354,7 @@ export function CategoriesView() {
       );
       setListLoading(false);
       if (!result.ok) {
-        toast.error("Could not load categories", {
+        toast.error("Could not load filter lists", {
           description: result.message,
         });
         setCategories([]);
@@ -382,7 +382,7 @@ export function CategoriesView() {
     const trimmed = name.trim();
     if (!trimmed) {
       toast.error("Name required", {
-        description: "Enter a category name before saving.",
+        description: "Enter a group name before saving.",
       });
       return;
     }
@@ -400,7 +400,7 @@ export function CategoriesView() {
     setMutating(false);
 
     if (!result.ok) {
-      toast.error("Could not create category", { description: result.message });
+      toast.error("Could not save group", { description: result.message });
       return;
     }
 
@@ -411,7 +411,7 @@ export function CategoriesView() {
 
     toast.success(
       subNames.length > 0
-        ? `Created “${trimmed}” with ${subNames.length} sub-item${subNames.length === 1 ? "" : "s"}.`
+        ? `Created “${trimmed}” with ${subNames.length} option${subNames.length === 1 ? "" : "s"}.`
         : `Created “${trimmed}”.`
     );
   };
@@ -419,7 +419,7 @@ export function CategoriesView() {
   const handleAddSub = async (categoryId: string) => {
     const raw = (subInputs[categoryId] ?? "").trim();
     if (!raw) {
-      toast.error("Subcategory name required");
+      toast.error("Option name required");
       return;
     }
 
@@ -432,14 +432,14 @@ export function CategoriesView() {
     setMutating(false);
 
     if (!result.ok) {
-      toast.error("Could not add subcategory", {
+      toast.error("Could not add option", {
         description: result.message,
       });
       return;
     }
 
     setSubInputs((m) => ({ ...m, [categoryId]: "" }));
-    toast.success("Subcategory added");
+    toast.success("Option added");
     await loadCategories();
   };
 
@@ -463,7 +463,7 @@ export function CategoriesView() {
       delete next[c.id];
       return next;
     });
-    toast.success("Category removed");
+    toast.success("Group removed");
     await loadCategories();
   };
 
@@ -476,7 +476,7 @@ export function CategoriesView() {
     const result = await deleteCategoryRequest(accessToken, subcategoryId);
     setRemovingSubId(null);
     if (!result.ok) {
-      toast.error("Could not remove subcategory", {
+      toast.error("Could not remove option", {
         description: result.message,
       });
       return;
@@ -487,30 +487,33 @@ export function CategoriesView() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-8">
-      <PageHeader title="Categories" />
+      <PageHeader
+        title="Teacher filter lists"
+       
+      />
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Tags className="h-4 w-4" />
-            Add category & sub-items
+            Add a group and its options
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-8">
           <form onSubmit={handleAddCategory} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="cat-name">Category name</Label>
+              <Label htmlFor="cat-name">Group name</Label>
               <Input
                 id="cat-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Subject, Region, Board"
+                placeholder="e.g. Subject, Board, Experience"
                 autoComplete="off"
                 disabled={mutating}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="cat-sub-first">Subcategories (optional)</Label>
+              <Label htmlFor="cat-sub-first">Options in this group (optional)</Label>
               <div className="space-y-2">
                 {subDraftRows.map((row, index) => (
                   <div key={row.id} className="flex items-center gap-2">
@@ -526,7 +529,7 @@ export function CategoriesView() {
                           )
                         )
                       }
-                      placeholder="Sub-item name"
+                      placeholder="e.g. Mathematics, CBSE"
                       autoComplete="off"
                       disabled={mutating}
                       className="min-w-0 flex-1"
@@ -538,7 +541,7 @@ export function CategoriesView() {
                         size="icon"
                         className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
                         disabled={mutating}
-                        aria-label="Remove this sub-item row"
+                        aria-label="Remove this option row"
                         onClick={() =>
                           setSubDraftRows((rows) =>
                             rows.filter((r) => r.id !== row.id)
@@ -563,7 +566,7 @@ export function CategoriesView() {
                   ])
                 }
               >
-                Add more
+                Add another option
               </Button>
             </div>
             <Button type="submit" disabled={mutating}>
@@ -573,14 +576,14 @@ export function CategoriesView() {
                   Saving…
                 </>
               ) : (
-                "Create category & sub-items"
+                "Save group & options"
               )}
             </Button>
           </form>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <Label className="text-sm font-semibold">Your categories</Label>
+              <Label className="text-sm font-semibold">Saved groups</Label>
               <Button
                 type="button"
                 variant="ghost"
@@ -601,7 +604,11 @@ export function CategoriesView() {
                 <Loader2 className="h-8 w-8 animate-spin" />
               </div>
             ) : categories.length === 0 ? (
-              <EmptyState icon={Tags} title="No categories yet" />
+              <EmptyState
+                icon={Tags}
+                title="No filter groups yet"
+                description="Add a group name and optional values above. They power the teacher advanced filters."
+              />
             ) : (
               <div className="overflow-hidden rounded-xl border bg-card">
                 {categories.map((c) => {
@@ -622,7 +629,7 @@ export function CategoriesView() {
                           onClick={() => toggleOpen(c.id)}
                           aria-expanded={isOpen}
                           aria-label={
-                            isOpen ? "Collapse sub-items" : "Expand sub-items"
+                            isOpen ? "Collapse options" : "Expand options"
                           }
                         >
                           <ChevronDown
@@ -650,7 +657,7 @@ export function CategoriesView() {
                             className="hidden shrink-0 text-xs sm:inline-flex"
                           >
                             {subs.length}{" "}
-                            {subs.length === 1 ? "item" : "items"}
+                            {subs.length === 1 ? "option" : "options"}
                           </Badge>
                         </div>
                         <div className="flex shrink-0 items-center border-l border-border">
@@ -688,7 +695,7 @@ export function CategoriesView() {
                                   [c.id]: e.target.value,
                                 }))
                               }
-                              placeholder="New subcategory name"
+                              placeholder="New option name"
                               className="bg-background sm:max-w-xs"
                               disabled={mutating}
                               onKeyDown={(e) => {
@@ -705,17 +712,17 @@ export function CategoriesView() {
                               disabled={mutating}
                               onClick={() => void handleAddSub(c.id)}
                             >
-                              Add subcategory
+                              Add option
                             </Button>
                           </div>
 
                           <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                            Sub-items
+                            Options
                           </p>
                           <div className="overflow-hidden rounded-lg border bg-background">
                             {subs.length === 0 ? (
                               <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                                No subcategories yet — add one above.
+                                No options yet — add one above.
                               </p>
                             ) : (
                               subs.map((s) => (
@@ -749,7 +756,7 @@ export function CategoriesView() {
                 <p className="text-xs text-muted-foreground">
                   Page {pagination.page} of {pagination.totalPages} ·{" "}
                   {pagination.total}{" "}
-                  {pagination.total === 1 ? "category" : "categories"}
+                  {pagination.total === 1 ? "group" : "groups"}
                 </p>
                 <div className="flex gap-2">
                   <Button

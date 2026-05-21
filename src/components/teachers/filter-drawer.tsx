@@ -102,11 +102,11 @@ export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
               </div>
             ) : loadFailed ? (
               <p className="text-sm text-muted-foreground">
-                Could not load categories. Check that the API is running.
+                Could not load filter lists. Check that the API is running.
               </p>
             ) : apiFilters.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No categories yet. Add groups under Categories in the menu,
+                No filter groups yet. Add them under Filter lists in the menu,
                 then open filters again.
               </p>
             ) : (

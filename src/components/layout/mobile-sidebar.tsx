@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { GraduationCap } from "lucide-react";
-
+import { BrandLogo } from "@/components/layout/brand-logo";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -26,12 +25,8 @@ export function MobileSidebar() {
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent side="left" className="w-72 p-0">
         <SheetHeader className="border-b px-4 py-4 text-left">
-          <SheetTitle className="flex items-center gap-2 text-base">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <GraduationCap className="h-4 w-4" />
-            </span>
-            ATS Teachers
-          </SheetTitle>
+          <SheetTitle className="sr-only">Main navigation</SheetTitle>
+          <BrandLogo variant="sheet" />
         </SheetHeader>
         <nav className="flex flex-col gap-1 p-3">
           {MAIN_NAV_LINKS.map(({ href, label, icon: Icon }) => {
@@ -62,13 +57,20 @@ export function MobileSidebar() {
   );
 }
 
-export function MobileSidebarTrigger() {
+export function MobileSidebarTrigger({
+  className,
+}: {
+  className?: string;
+}) {
   const setOpen = useUiStore((s) => s.setMobileNavOpen);
   return (
     <motion.button
       whileTap={{ scale: 0.96 }}
       type="button"
-      className="inline-flex h-9 w-9 items-center justify-center rounded-md border bg-background md:hidden"
+      className={cn(
+        "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border bg-background md:hidden",
+        className
+      )}
       onClick={() => setOpen(true)}
       aria-label="Open navigation"
     >

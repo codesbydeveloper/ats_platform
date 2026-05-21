@@ -16,9 +16,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ATS Teachers | Management",
+  title: "Tree Learning | Teacher management",
   description:
-    "Premium frontend-only teacher management workspace with analytics, roster tools, and imports.",
+    "Teacher hiring workspace with roster tools, analytics, and imports — Tree Learning.",
 };
 
 export default function RootLayout({

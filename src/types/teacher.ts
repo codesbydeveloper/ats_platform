@@ -21,6 +21,8 @@ export interface Teacher {
   pgUniversity: string;
   qualification: string;
   certifications: string;
+  /** Optional extra education lines from API (`additional_education`). */
+  extraEducation?: string[];
   subject: string;
   boards: string[];
   grades: string[];

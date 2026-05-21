@@ -1,4 +1,6 @@
+import { mapApiRowToTeacher } from "@/lib/teachers-api";
 import type { Category, SubCategory } from "@/types/category";
+import type { Teacher } from "@/types/teacher";
 
 const API_BASE =
   typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL
@@ -195,6 +197,213 @@ export async function listCategoriesRequest(
 export type ListAllCategoriesResult =
   | { ok: true; categories: Category[] }
   | { ok: false; message: string };
+
+export type LookupFieldOption = {
+  id: string;
+  name: string;
+  value?: string;
+  teacher_id?: number;
+  teacher_name?: string;
+  teacher_count?: number;
+  createdAt?: string;
+};
+
+export type LookupFieldOptionsPagination = CategoriesPagination & {
+  slug: string;
+  field: string;
+  parent: { id: string; name: string } | null;
+};
+
+export type ListLookupFieldOptionsResult =
+  | {
+      ok: true;
+      options: LookupFieldOption[];
+      pagination: LookupFieldOptionsPagination;
+    }
+  | { ok: false; message: string };
+
+/**
+ * GET /api/categories/lookup/:slug/options?page=&limit=&q=
+ * Only sub-options for one field (Educational Qualification, Boards Taught, etc.).
+ */
+export async function listLookupFieldOptionsRequest(
+  accessToken: string | null,
+  slug: string,
+  page = DEFAULT_PAGE,
+  limit = DEFAULT_LIMIT,
+  search = ""
+): Promise<ListLookupFieldOptionsResult> {
+  const safePage = Math.max(1, page);
+  const safeLimit = Math.min(MAX_LIMIT, Math.max(1, limit));
+  const params = new URLSearchParams({
+    page: String(safePage),
+    limit: String(safeLimit),
+  });
+  const q = search.trim();
+  if (q) params.set("q", q);
+
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_BASE}/api/categories/lookup/${encodeURIComponent(slug)}/options?${params}`,
+      { headers: authHeaders(accessToken) }
+    );
+  } catch {
+    return {
+      ok: false,
+      message: `Could not reach API at ${API_BASE}. Is the server running?`,
+    };
+  }
+
+  let data: unknown = null;
+  try {
+    data = await res.json();
+  } catch {
+    /* non-JSON */
+  }
+
+  if (!res.ok) {
+    return { ok: false, message: apiErrorMessage(data, res.status) };
+  }
+
+  const root = asRecord(data) ?? {};
+  const rawOpts = Array.isArray(root.options) ? root.options : [];
+  const options: LookupFieldOption[] = rawOpts
+    .map((n) => asRecord(n))
+    .filter(Boolean)
+    .map((r) => ({
+      id: String(r!.id ?? r!.teacher_id ?? r!.name ?? ""),
+      name: String(r!.name ?? r!.value ?? "Untitled"),
+      value: r!.value != null ? String(r!.value) : String(r!.name ?? ""),
+      teacher_id:
+        r!.teacher_id != null ? Number(r!.teacher_id) : undefined,
+      teacher_name:
+        r!.teacher_name != null ? String(r!.teacher_name) : undefined,
+      teacher_count:
+        r!.teacher_count != null ? Number(r!.teacher_count) : undefined,
+      createdAt:
+        r!.createdAt != null || r!.created_at != null
+          ? String(r!.createdAt ?? r!.created_at)
+          : undefined,
+    }))
+    .filter((o) => o.name);
+
+  const parentRec = asRecord(root.parent);
+  const parent =
+    parentRec && parentRec.id != null
+      ? {
+          id: String(parentRec.id),
+          name: String(parentRec.name ?? ""),
+        }
+      : null;
+
+  const total = Number(root.total ?? options.length);
+  const totalPages = Math.max(
+    1,
+    Number(root.total_pages ?? (Math.ceil(total / safeLimit) || 1))
+  );
+
+  return {
+    ok: true,
+    options,
+    pagination: {
+      slug: String(root.slug ?? slug),
+      field: String(root.field ?? slug),
+      parent,
+      page: Number(root.page ?? safePage),
+      limit: Number(root.limit ?? safeLimit),
+      total,
+      totalPages,
+      hasNextPage: Boolean(root.has_next_page ?? safePage < totalPages),
+      hasPrevPage: Boolean(root.has_prev_page ?? safePage > 1),
+      count: Number(root.count ?? options.length),
+    },
+  };
+}
+
+export type ListLookupFieldTeachersResult =
+  | {
+      ok: true;
+      teachers: Teacher[];
+      value: string;
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+      hasNextPage: boolean;
+      hasPrevPage: boolean;
+    }
+  | { ok: false; message: string };
+
+/** GET /api/categories/lookup/:slug/teachers?value=&page=&limit= */
+export async function listLookupFieldTeachersRequest(
+  accessToken: string | null,
+  slug: string,
+  value: string,
+  page = DEFAULT_PAGE,
+  limit = DEFAULT_LIMIT,
+  teacherId?: string | number | null
+): Promise<ListLookupFieldTeachersResult> {
+  const safePage = Math.max(1, page);
+  const safeLimit = Math.min(MAX_LIMIT, Math.max(1, limit));
+  const params = new URLSearchParams({
+    page: String(safePage),
+    limit: String(safeLimit),
+  });
+  if (teacherId != null && String(teacherId).trim() !== "") {
+    params.set("teacher_id", String(teacherId));
+  } else {
+    params.set("value", value.trim());
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_BASE}/api/categories/lookup/${encodeURIComponent(slug)}/teachers?${params}`,
+      { headers: authHeaders(accessToken) }
+    );
+  } catch {
+    return {
+      ok: false,
+      message: `Could not reach API at ${API_BASE}. Is the server running?`,
+    };
+  }
+
+  let data: unknown = null;
+  try {
+    data = await res.json();
+  } catch {
+    /* non-JSON */
+  }
+
+  if (!res.ok) {
+    return { ok: false, message: apiErrorMessage(data, res.status) };
+  }
+
+  const root = asRecord(data) ?? {};
+  const rawList = Array.isArray(root.teachers) ? root.teachers : [];
+  const teachers = rawList
+    .map(mapApiRowToTeacher)
+    .filter((t): t is Teacher => t != null);
+
+  const total = Number(root.total ?? teachers.length);
+  const totalPages = Math.max(
+    1,
+    Number(root.total_pages ?? (Math.ceil(total / safeLimit) || 1))
+  );
+
+  return {
+    ok: true,
+    teachers,
+    value: String(root.value ?? value),
+    total,
+    page: Number(root.page ?? safePage),
+    limit: Number(root.limit ?? safeLimit),
+    totalPages,
+    hasNextPage: Boolean(root.has_next_page ?? safePage < totalPages),
+    hasPrevPage: Boolean(root.has_prev_page ?? safePage > 1),
+  };
+}
 
 /** GET /api/categories/all — full tree for filters, dropdowns, etc. */
 export async function listAllCategoriesRequest(

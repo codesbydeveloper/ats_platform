@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { RowSelectionState } from "@tanstack/react-table";
 import {
   Download,
@@ -16,7 +17,6 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { TableSkeleton } from "@/components/shared/loading-skeleton";
-import { SearchInput } from "@/components/shared/search-input";
 import { FilterDrawer } from "@/components/teachers/filter-drawer";
 import { ImportExcelModal } from "@/components/teachers/import-excel-modal";
 import {
@@ -34,13 +34,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { filterTeachers } from "@/utils/filter-teachers";
 import {
@@ -54,7 +47,6 @@ import {
   deleteTeacherRequest,
   downloadTeacherResumeRequest,
   exportTeachersFromApi,
-  getTeacherRequest,
   listTeachersRequest,
   updateTeacherRequest,
 } from "@/lib/teachers-api";
@@ -132,68 +124,14 @@ function FilterChips() {
   );
 }
 
-function ViewTeacherDialog({
-  teacher,
-  loadingFromApi,
-  onClose,
-}: {
-  teacher: Teacher;
-  loadingFromApi?: boolean;
-  onClose: () => void;
-}) {
-  const rows: [string, string][] = [
-    ["Teacher ID", teacher.id],
-    ["Name", teacher.name],
-    ["Email", teacher.email],
-    ["Mobile", teacher.mobile],
-    ["Location", `${teacher.city}, ${teacher.state}`],
-    ["Subject", teacher.subject],
-    ["Roles", teacher.roles.join(", ")],
-    ["Grades", teacher.grades.join(", ")],
-    ["Boards", teacher.boards.join(", ")],
-    ["Experience", `${teacher.experienceYears} yrs`],
-    ["Salary (₹)", String(teacher.currentSalary)],
-    ["Status", teacher.status],
-    ["Resume", teacher.resumeFileName ?? "—"],
-    ["Notes", teacher.notes || "—"],
-  ];
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{teacher.name}</DialogTitle>
-          <DialogDescription>Read-only profile snapshot.</DialogDescription>
-        </DialogHeader>
-        {loadingFromApi ? (
-          <div className="flex items-center gap-2 rounded-lg border border-dashed bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden />
-            Loading latest details from the server…
-          </div>
-        ) : null}
-        <dl className="grid grid-cols-1 gap-3 text-sm">
-          {rows.map(([k, v]) => (
-            <div
-              key={k}
-              className="flex flex-col rounded-lg border bg-muted/40 px-3 py-2"
-            >
-              <dt className="text-xs uppercase text-muted-foreground">{k}</dt>
-              <dd className="font-medium">{v}</dd>
-            </div>
-          ))}
-        </dl>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export function TeachersView() {
+  const router = useRouter();
   const accessToken = useAuthStore((s) => s.accessToken);
   const teachers = useTeacherStore((s) => s.teachers);
   const addTeacher = useTeacherStore((s) => s.addTeacher);
   const updateTeacher = useTeacherStore((s) => s.updateTeacher);
   const deleteTeacher = useTeacherStore((s) => s.deleteTeacher);
   const bulkDelete = useTeacherStore((s) => s.bulkDelete);
-  const importTeachers = useTeacherStore((s) => s.importTeachers);
   const filters = useFilterStore((s) => s.filters);
   const setFilters = useFilterStore((s) => s.setFilters);
   const compactDensity = useUiStore((s) => s.compactDensity);
@@ -206,9 +144,6 @@ export function TeachersView() {
   const [activeTeacher, setActiveTeacher] = useState<Teacher | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [viewTeacher, setViewTeacher] = useState<Teacher | null>(null);
-  const [viewTeacherLoading, setViewTeacherLoading] = useState(false);
-  const viewFetchSeq = useRef(0);
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Teacher | null>(null);
   const [bulkConfirm, setBulkConfirm] = useState(false);
@@ -393,7 +328,7 @@ export function TeachersView() {
         title="Teachers"
         description={
           useApiList
-            ? "Roster loads from your API (paginated). Filters apply within the current page."
+            ? ""
             : "Search, filter, and manage your talent pool with ATS-grade tooling."
         }
       />
@@ -416,9 +351,8 @@ export function TeachersView() {
         </div>
       ) : null}
 
-      <div className="sticky top-14 z-30 -mx-4 border-b bg-background/90 px-4 py-3 backdrop-blur md:-mx-8 md:px-8">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-1 flex-wrap gap-2">
+      <div className="sticky top-14 z-30 -mx-4 border-b bg-background/90 px-4 py-3 backdrop-blur md:top-16 md:-mx-8 md:px-8">
+        <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={openAdd}>
               <Plus className="mr-1 h-4 w-4" />
               Add teacher
@@ -501,14 +435,6 @@ export function TeachersView() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-          <div className="w-full min-w-[220px] lg:max-w-xs">
-            <SearchInput
-              value={filters.search}
-              onValueChange={(v) => setFilters({ search: v })}
-              placeholder="Quick search…"
-            />
-          </div>
         </div>
         <Separator className="my-3" />
         <FilterChips />
@@ -563,27 +489,7 @@ export function TeachersView() {
                 }
               : undefined
           }
-          onView={(t) => {
-            setViewTeacher(t);
-            if (!accessToken) {
-              setViewTeacherLoading(false);
-              return;
-            }
-            const seq = ++viewFetchSeq.current;
-            setViewTeacherLoading(true);
-            void (async () => {
-              const result = await getTeacherRequest(accessToken, t.id);
-              if (seq !== viewFetchSeq.current) return;
-              setViewTeacherLoading(false);
-              if (!result.ok) {
-                toast.error("Could not load teacher", {
-                  description: result.message,
-                });
-                return;
-              }
-              setViewTeacher(result.teacher);
-            })();
-          }}
+          onView={(t) => router.push(`/teachers/${t.id}`)}
           onEdit={openEdit}
           onDelete={(t) => setDeleteTarget(t)}
           onDownloadResume={(t) => {
@@ -639,23 +545,11 @@ export function TeachersView() {
         open={importOpen}
         onOpenChange={setImportOpen}
         teachers={teachers}
-        onImport={(incoming) => importTeachers(incoming)}
         onAfterApiImport={() => {
           setPageIndex(0);
           refetchTeachers();
         }}
       />
-      {viewTeacher ? (
-        <ViewTeacherDialog
-          teacher={viewTeacher}
-          loadingFromApi={Boolean(accessToken) && viewTeacherLoading}
-          onClose={() => {
-            viewFetchSeq.current += 1;
-            setViewTeacherLoading(false);
-            setViewTeacher(null);
-          }}
-        />
-      ) : null}
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(o) => {

@@ -6,7 +6,9 @@ import { motion } from "framer-motion";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { Eye, EyeOff, Sparkles } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
+
+import { BrandLogo } from "@/components/layout/brand-logo";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -96,10 +98,7 @@ export default function LoginPage() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_55%)]" />
         <div className="relative z-10 flex flex-col justify-between p-12 text-white">
           <div>
-            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-white/80">
-              <Sparkles className="h-4 w-4" />
-              ATS Teachers
-            </div>
+            <BrandLogo variant="login-hero" />
             <h1 className="mt-8 max-w-md text-4xl font-semibold leading-tight tracking-tight">
               The calmest way to run teacher hiring.
             </h1>
@@ -130,14 +129,18 @@ export default function LoginPage() {
           transition={{ duration: 8, repeat: Infinity }}
         />
       </div>
-      <div className="flex items-center justify-center bg-muted/40 p-6">
+      <div className="flex items-center justify-center bg-background p-6 sm:p-10">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
-          className="w-full max-w-md rounded-2xl border bg-background/80 p-8 shadow-2xl shadow-black/10 backdrop-blur-xl"
+          className="app-card w-full max-w-[400px] p-8 sm:p-9"
         >
-          <div className="mb-8 space-y-1 text-center lg:text-left">
+          <div className="mb-8 space-y-4 text-center lg:text-left">
+            <div className="flex justify-center lg:justify-start">
+              <BrandLogo variant="login-form" />
+            </div>
+            <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               Secure access
             </p>
@@ -148,6 +151,7 @@ export default function LoginPage() {
               Use your admin credentials (password must be at least six
               characters).
             </p>
+            </div>
           </div>
           <Form {...form}>
             <form className="space-y-5" onSubmit={form.handleSubmit(onSubmit)}>
@@ -180,14 +184,14 @@ export default function LoginPage() {
                           type={showPassword ? "text" : "password"}
                           autoComplete="current-password"
                           placeholder="••••••••"
-                          className="pr-10"
+                          className="pr-11"
                           {...field}
                         />
                       </FormControl>
                       <button
                         type="button"
                         onClick={() => setShowPassword((v) => !v)}
-                        className="absolute right-0 top-0 flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
                         aria-label={
                           showPassword ? "Hide password" : "Show password"
                         }
@@ -220,8 +224,7 @@ export default function LoginPage() {
               />
               <Button
                 type="submit"
-                className="w-full"
-                size="lg"
+                className="h-11 w-full bg-foreground text-background hover:bg-foreground/90"
                 disabled={isSubmitting}
               >
                 {isSubmitting ? "Signing in…" : "Continue"}

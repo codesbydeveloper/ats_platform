@@ -12,6 +12,8 @@ interface SearchInputProps
   onValueChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  /** Pill style for the top app header bar. */
+  variant?: "default" | "header";
 }
 
 export function SearchInput({
@@ -19,16 +21,28 @@ export function SearchInput({
   onValueChange,
   placeholder = "Search…",
   className,
+  variant = "default",
   ...props
 }: SearchInputProps) {
+  const isHeader = variant === "header";
+
   return (
-    <div className={cn("relative", className)}>
-      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+    <div className={cn("relative w-full", className)}>
+      <Search
+        className={cn(
+          "pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground",
+          isHeader ? "left-4" : "left-3"
+        )}
+      />
       <Input
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
         placeholder={placeholder}
-        className="h-9 pl-9"
+        className={cn(
+          isHeader
+            ? "h-10 rounded-full border-0 bg-[#f0fdf4] pl-11 pr-4 text-sm shadow-none placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/30 md:h-11"
+            : "h-9 pl-9"
+        )}
         {...props}
       />
     </div>

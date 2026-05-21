@@ -86,6 +86,9 @@ export function buildTeacherApiPayload(
     pg_university: values.pgUniversity,
     qualification: values.qualification,
     certifications: values.certifications ?? "",
+    additional_education: (values.extraEducation ?? [])
+      .map((e) => e.value.trim())
+      .filter(Boolean),
     current_location: values.currentLocation,
     preferred_location: values.preferredLocation,
     area_of_interest: values.areaOfInterest,
@@ -238,7 +241,10 @@ function mapWorkExpItem(
           ? String(w.to_date)
           : null,
     currentlyWorking: Boolean(
-      w.currently_working ?? w.currentlyWorking ?? false
+      w.currently_working ??
+        w.currentlyWorking ??
+        w.is_currently_working ??
+        false
     ),
   };
 }
@@ -275,6 +281,9 @@ export function mapApiRowToTeacher(row: unknown): Teacher | null {
     qualification:
       pickStr(r, "qualification", "educational_qualifications") || "—",
     certifications: pickStr(r, "certifications") || "",
+    extraEducation: asStrArr(
+      r.additional_education ?? r.education_extras ?? r.extra_education
+    ),
     subject: pickStr(r, "subject", "subject_taught") || "—",
     boards: asStrArr(r.boards_taught ?? r.boards),
     grades: asStrArr(r.grades_taught ?? r.grades),
@@ -898,7 +907,75 @@ export async function exportTeachersFromApi(
   return { ok: true, filename };
 }
 
-export type ImportTeachersFileResult = CreateTeacherResult;
+export type ImportTeachersFileResult =
+  | { ok: true; data: unknown; message: string }
+  | { ok: false; message: string };
+
+function importSuccessMessage(data: unknown): string {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return "Spreadsheet imported successfully.";
+  }
+  const root = data as Record<string, unknown>;
+  const inner =
+    root.data && typeof root.data === "object" && !Array.isArray(root.data)
+      ? (root.data as Record<string, unknown>)
+      : root;
+  const count =
+    inner.imported ??
+    inner.imported_count ??
+    inner.created ??
+    inner.count ??
+    root.imported;
+  if (typeof count === "number") {
+    return `${count} teacher${count === 1 ? "" : "s"} imported.`;
+  }
+  if (typeof root.message === "string" && root.message.trim()) {
+    return root.message.trim();
+  }
+  return "Spreadsheet imported successfully.";
+}
+
+export type ParseResumeResult =
+  | { ok: true; data: unknown }
+  | { ok: false; message: string };
+
+/** POST /api/teachers/parse-resume — multipart field `resume` (PDF or DOCX). */
+export async function parseResumeRequest(
+  accessToken: string,
+  file: File
+): Promise<ParseResumeResult> {
+  const formData = new FormData();
+  formData.append("resume", file, file.name);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/teachers/parse-resume`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: formData,
+    });
+  } catch {
+    return {
+      ok: false,
+      message: `Could not reach API at ${API_BASE}/api/teachers/parse-resume. Is the server running?`,
+    };
+  }
+
+  let data: unknown = null;
+  try {
+    data = await res.json();
+  } catch {
+    /* non-JSON */
+  }
+
+  if (!res.ok) {
+    return { ok: false, message: apiErrorMessage(data, res.status) };
+  }
+
+  return { ok: true, data };
+}
 
 /** POST /api/teachers/import — multipart field `file` (spreadsheet). */
 export async function importTeachersFileRequest(
@@ -920,7 +997,7 @@ export async function importTeachersFileRequest(
   } catch {
     return {
       ok: false,
-      message: `Could not reach API at ${API_BASE}. Is the server running?`,
+      message: `Could not reach API at ${API_BASE}/api/teachers/import. Is the server running?`,
     };
   }
 
@@ -938,7 +1015,7 @@ export async function importTeachersFileRequest(
     };
   }
 
-  return { ok: true, data };
+  return { ok: true, data, message: importSuccessMessage(data) };
 }
 
 /** Merge API response id (if any) into locally built teacher row. */

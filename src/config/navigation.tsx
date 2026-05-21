@@ -13,6 +13,6 @@ export const MAIN_NAV_LINKS: {
 }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/teachers", label: "Teachers", icon: GraduationCap },
-  { href: "/categories", label: "Categories", icon: Tags },
+  { href: "/categories", label: "Filter lists", icon: Tags },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

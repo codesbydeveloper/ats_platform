@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useFieldArray, useForm, useWatch, type Resolver } from "react-hook-form";
+import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { ResumeQuickUpload } from "@/components/teachers/resume-upload";
@@ -40,9 +41,11 @@ import {
   teacherFormSchema,
   type TeacherFormValues,
 } from "@/lib/validations/teacher-form";
+import { parsedResumeToFormPatch } from "@/lib/parse-resume-to-form";
 import {
   applyCreatedTeacherFromApi,
   createTeacherRequest,
+  parseResumeRequest,
   updateTeacherRequest,
 } from "@/lib/teachers-api";
 import { useAuthStore } from "@/store/auth-store";
@@ -73,6 +76,10 @@ export function teacherToFormValues(t: Teacher): TeacherFormValues {
     pgUniversity: t.pgUniversity,
     qualification: t.qualification,
     certifications: t.certifications,
+    extraEducation: (t.extraEducation ?? []).map((value) => ({
+      id: uid("edu-extra"),
+      value,
+    })),
     subject: t.subject,
     boards: t.boards,
     grades: t.grades,
@@ -110,6 +117,7 @@ function emptyForm(): TeacherFormValues {
     pgUniversity: "",
     qualification: "",
     certifications: "",
+    extraEducation: [],
     subject: SUBJECTS[0]!,
     boards: [BOARDS[0]!],
     grades: [GRADES[0]!],
@@ -164,6 +172,9 @@ function toTeacher(
     pgUniversity: values.pgUniversity,
     qualification: values.qualification,
     certifications: values.certifications ?? "",
+    extraEducation: (values.extraEducation ?? [])
+      .map((e) => e.value.trim())
+      .filter(Boolean),
     subject: values.subject,
     boards: values.boards,
     grades: values.grades,
@@ -334,6 +345,7 @@ export function TeacherFormDrawer({
 }: TeacherFormDrawerProps) {
   const [confirmClose, setConfirmClose] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [parsingResume, setParsingResume] = useState(false);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumeFileRef = useRef<File | null>(null);
 
@@ -366,9 +378,18 @@ export function TeacherFormDrawer({
     }
   }, [open, mode, teacher, form]);
 
-  const { fields, remove } = useFieldArray({
+  const { fields, remove, append: appendWork } = useFieldArray({
     control: form.control,
     name: "workHistory",
+  });
+
+  const {
+    fields: extraEducationFields,
+    append: appendExtraEducation,
+    remove: removeExtraEducation,
+  } = useFieldArray({
+    control: form.control,
+    name: "extraEducation",
   });
 
   const isDirty = form.formState.isDirty;
@@ -413,6 +434,52 @@ export function TeacherFormDrawer({
       return;
     }
     onOpenChange(next);
+  };
+
+  const handleResumeSelected = async (file: File | null) => {
+    resumeFileRef.current = file;
+    if (!file) return;
+
+    const token = useAuthStore.getState().accessToken;
+    if (!token) {
+      toast.message("Resume attached", {
+        description: "Sign in to auto-fill fields from the resume.",
+      });
+      return;
+    }
+
+    setParsingResume(true);
+    try {
+      const result = await parseResumeRequest(token, file);
+      if (!result.ok) {
+        toast.error("Could not read resume", { description: result.message });
+        return;
+      }
+
+      const patch = parsedResumeToFormPatch(result.data);
+      const keys = Object.keys(patch) as (keyof TeacherFormValues)[];
+      if (keys.length === 0) {
+        toast.message("Resume attached", {
+          description: "No profile fields were extracted.",
+        });
+        return;
+      }
+
+      for (const key of keys) {
+        const value = patch[key];
+        if (value !== undefined) {
+          form.setValue(key, value as TeacherFormValues[typeof key], {
+            shouldDirty: true,
+          });
+        }
+      }
+
+      toast.success("Form updated from resume", {
+        description: `${keys.length} field${keys.length === 1 ? "" : "s"} filled.`,
+      });
+    } finally {
+      setParsingResume(false);
+    }
   };
 
   /** Edit: send current form values to API without full Zod re-validation (partial updates OK). */
@@ -545,9 +612,8 @@ export function TeacherFormDrawer({
               <ResumeQuickUpload
                 fileName={resumeFileName ?? null}
                 disabled={saving}
-                onFileSelected={(file) => {
-                  resumeFileRef.current = file;
-                }}
+                parsing={parsingResume}
+                onFileSelected={handleResumeSelected}
                 onChange={(next) => {
                   form.setValue("resumeFileName", next.fileName, {
                     shouldDirty: true,
@@ -712,59 +778,108 @@ export function TeacherFormDrawer({
                 <CardHeader>
                   <CardTitle className="text-base">Educational details</CardTitle>
                 </CardHeader>
-                <CardContent className="grid gap-4 md:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="ugCollege"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>UG college</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="pgUniversity"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>PG university</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="qualification"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Qualification</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="certifications"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Certifications</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="ugCollege"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>UG college</FormLabel>
+                          <FormControl>
+                            <Input {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="pgUniversity"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>PG university</FormLabel>
+                          <FormControl>
+                            <Input {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="qualification"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Qualification</FormLabel>
+                          <FormControl>
+                            <Input {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="certifications"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Certifications</FormLabel>
+                          <FormControl>
+                            <Input {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  {extraEducationFields.map((field, index) => (
+                    <FormField
+                      key={field.id}
+                      control={form.control}
+                      name={`extraEducation.${index}.value`}
+                      render={({ field: f }) => (
+                        <FormItem>
+                          <div className="flex gap-2">
+                            <FormControl>
+                              <Input
+                                {...f}
+                                placeholder="Additional detail"
+                              />
+                            </FormControl>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-10 w-10 shrink-0"
+                              aria-label={`Remove additional detail ${index + 1}`}
+                              onClick={() => removeExtraEducation(index)}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ))}
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() =>
+                      appendExtraEducation({
+                        id: uid("edu-extra"),
+                        value: "",
+                      })
+                    }
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add more
+                  </Button>
                 </CardContent>
               </Card>
 
@@ -1045,6 +1160,16 @@ export function TeacherFormDrawer({
                       </div>
                     </div>
                   ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => appendWork(defaultWork())}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add role
+                  </Button>
                 </CardContent>
               </Card>
 
