@@ -5,7 +5,7 @@ import type { Teacher } from "@/types/teacher";
 const API_BASE =
   typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL
     ? process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "")
-    : "http://localhost:8000";
+    : "https://ats.raomtech.com";
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;

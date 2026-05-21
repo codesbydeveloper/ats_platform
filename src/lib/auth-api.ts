@@ -3,7 +3,7 @@ import type { AuthUser } from "@/types/auth";
 const API_BASE =
   typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL
     ? process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "")
-    : "http://localhost:8000";
+    : "https://ats.raomtech.com";
 
 export type SignInResult =
   | { ok: true; user: AuthUser; accessToken: string | null }

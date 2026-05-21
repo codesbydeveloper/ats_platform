@@ -5,7 +5,7 @@ import type { Teacher, TeacherStatus, TeacherWorkExperience } from "@/types/teac
 const API_BASE =
   typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL
     ? process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "")
-    : "http://localhost:8000";
+    : "https://ats.raomtech.com";
 
 /** Normalize HTML date (YYYY-MM-DD) to ISO for APIs / ORMs that expect full timestamps. */
 function toIsoDateOrNull(value: string | null | undefined): string | null {
