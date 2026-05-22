@@ -3,10 +3,9 @@ import { mapApiRowToTeacher } from "@/lib/teachers-api";
 import type { DashboardData, DashboardStat } from "@/types/dashboard";
 import type { Teacher } from "@/types/teacher";
 
-const API_BASE =
-  typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL
-    ? process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "")
-    : "https://ats.raomtech.com";
+import { getApiBase } from "@/lib/api-config";
+
+const API_BASE = getApiBase();
 
 function authHeaders(accessToken: string | null): HeadersInit {
   const h: Record<string, string> = {

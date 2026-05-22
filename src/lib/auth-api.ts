@@ -1,9 +1,7 @@
 import type { AuthUser } from "@/types/auth";
+import { getApiBase } from "@/lib/api-config";
 
-const API_BASE =
-  typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL
-    ? process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "")
-    : "https://ats.raomtech.com";
+const API_BASE = getApiBase();
 
 export type SignInResult =
   | { ok: true; user: AuthUser; accessToken: string | null }

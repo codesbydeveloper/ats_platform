@@ -2,10 +2,9 @@ import type { TeacherFormValues } from "@/lib/validations/teacher-form";
 import type { TeacherFilters } from "@/store/filter-store";
 import type { Teacher, TeacherStatus, TeacherWorkExperience } from "@/types/teacher";
 
-const API_BASE =
-  typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL
-    ? process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "")
-    : "https://ats.raomtech.com";
+import { getApiBase } from "@/lib/api-config";
+
+const API_BASE = getApiBase();
 
 /** Normalize HTML date (YYYY-MM-DD) to ISO for APIs / ORMs that expect full timestamps. */
 function toIsoDateOrNull(value: string | null | undefined): string | null {

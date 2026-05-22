@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -31,12 +30,6 @@ const loginSchema = z.object({
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
-
-const features = [
-  "Pipeline-grade roster intelligence",
-  "Imports with validation & duplicate checks",
-  "Premium analytics tuned for hiring teams",
-];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -86,169 +79,131 @@ export default function LoginPage() {
 
   if (!mounted) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="flex min-h-screen items-center justify-center bg-surface-muted">
         <p className="text-sm text-muted-foreground">Loading…</p>
       </div>
     );
   }
 
+  const year = new Date().getFullYear();
+
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
-      <div className="relative hidden overflow-hidden bg-gradient-to-br from-violet-600 via-indigo-600 to-sky-500 lg:flex">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_55%)]" />
-        <div className="relative z-10 flex flex-col justify-between p-12 text-white">
-          <div>
-            <BrandLogo variant="login-hero" />
-            <h1 className="mt-8 max-w-md text-4xl font-semibold leading-tight tracking-tight">
-              The calmest way to run teacher hiring.
-            </h1>
-            <p className="mt-4 max-w-md text-base text-white/80">
-              A focused workspace for recruiters who care about craft — fast
-              rostering, crisp analytics, and zero clutter.
-            </p>
-          </div>
-          <ul className="space-y-3 text-sm text-white/90">
-            {features.map((f) => (
-              <li key={f} className="flex items-center gap-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                {f}
-              </li>
-            ))}
-          </ul>
-          <div className="rounded-2xl border border-white/20 bg-white/10 p-6 backdrop-blur-md">
-            <p className="text-sm text-white/80">
-              Sign in connects to your ATS API. Session is kept in this browser
-              (localStorage).
-            </p>
-          </div>
-        </div>
-        <motion.div
-          aria-hidden
-          className="pointer-events-none absolute -right-24 bottom-0 h-72 w-72 rounded-full bg-white/20 blur-3xl"
-          animate={{ scale: [1, 1.08, 1], opacity: [0.35, 0.55, 0.35] }}
-          transition={{ duration: 8, repeat: Infinity }}
-        />
-      </div>
-      <div className="flex items-center justify-center bg-background p-6 sm:p-10">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}
-          className="app-card w-full max-w-[400px] p-8 sm:p-9"
-        >
-          <div className="mb-8 space-y-4 text-center lg:text-left">
-            <div className="flex justify-center lg:justify-start">
-              <BrandLogo variant="login-form" />
+    <div className="flex min-h-screen items-center justify-center bg-surface-muted px-4 py-8 sm:px-6 sm:py-12">
+      <div className="app-card w-full max-w-[880px] overflow-hidden">
+        <div className="h-1 bg-primary" aria-hidden />
+
+        <div className="grid md:grid-cols-2">
+          <section className="flex flex-col justify-between gap-8 border-b border-border bg-secondary/40 p-8 sm:p-10 md:border-b-0 md:border-r">
+            <BrandLogo variant="login-form" wrapClassName="justify-start" />
+
+            <div className="space-y-3">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[1.65rem]">
+                Tree Learning ATS
+              </h1>
+              <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
+                Manage teachers, imports, and hiring lists in one place.
+              </p>
             </div>
-            <div className="space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Secure access
+
+            <p className="text-xs text-muted-foreground">
+              © {year} Tree Learning
             </p>
-            <h2 className="text-2xl font-semibold tracking-tight">
-              Sign in to continue
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Use your admin credentials (password must be at least six
-              characters).
-            </p>
+          </section>
+
+          <section className="flex flex-col justify-center p-8 sm:p-10">
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold text-foreground">Sign in</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Admin email and password
+              </p>
             </div>
-          </div>
-          <Form {...form}>
-            <form className="space-y-5" onSubmit={form.handleSubmit(onSubmit)}>
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input
-                        autoComplete="email"
-                        placeholder="you@school.edu"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <div className="relative">
+
+            <Form {...form}>
+              <form
+                className="space-y-4"
+                onSubmit={form.handleSubmit(onSubmit)}
+              >
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
                       <FormControl>
                         <Input
-                          type={showPassword ? "text" : "password"}
-                          autoComplete="current-password"
-                          placeholder="••••••••"
-                          className="pr-11"
+                          autoComplete="email"
+                          placeholder="you@school.edu"
+                          className="bg-background"
                           {...field}
                         />
                       </FormControl>
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword((v) => !v)}
-                        className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
-                        aria-label={
-                          showPassword ? "Hide password" : "Show password"
-                        }
-                      >
-                        {showPassword ? (
-                          <EyeOff className="h-4 w-4" aria-hidden />
-                        ) : (
-                          <Eye className="h-4 w-4" aria-hidden />
-                        )}
-                      </button>
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="remember"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center gap-2 space-y-0">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                    <FormLabel className="!mt-0 font-normal">Remember me</FormLabel>
-                  </FormItem>
-                )}
-              />
-              <Button
-                type="submit"
-                className="h-11 w-full bg-foreground text-background hover:bg-foreground/90"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? "Signing in…" : "Continue"}
-              </Button>
-            </form>
-          </Form>
-          <p className="mt-6 text-center text-xs text-muted-foreground">
-            {process.env.NODE_ENV === "development" ? (
-              <>
-                Dev: POST{" "}
-                {(
-                  process.env.NEXT_PUBLIC_API_URL ?? "https://ats.raomtech.com"
-                ).replace(/\/$/, "")}
-                /api/auth/signin
-              </>
-            ) : (
-              "Sign in with your organization account."
-            )}
-          </p>
-          <p className="mt-4 text-center text-xs text-muted-foreground lg:hidden">
-            Prefer the full experience?{" "}
-            <span className="font-medium text-foreground">Open on desktop.</span>
-          </p>
-        </motion.div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <div className="relative">
+                        <FormControl>
+                          <Input
+                            type={showPassword ? "text" : "password"}
+                            autoComplete="current-password"
+                            placeholder="••••••••"
+                            className="bg-background pr-11"
+                            {...field}
+                          />
+                        </FormControl>
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((v) => !v)}
+                          className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                          aria-label={
+                            showPassword ? "Hide password" : "Show password"
+                          }
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" aria-hidden />
+                          ) : (
+                            <Eye className="h-4 w-4" aria-hidden />
+                          )}
+                        </button>
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="remember"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center gap-2 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <FormLabel className="font-normal">
+                        Remember me
+                      </FormLabel>
+                    </FormItem>
+                  )}
+                />
+                <Button
+                  type="submit"
+                  className="mt-1 h-10 w-full"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? "Signing in…" : "Sign in"}
+                </Button>
+              </form>
+            </Form>
+          </section>
+        </div>
       </div>
     </div>
   );

@@ -2,10 +2,9 @@ import { mapApiRowToTeacher } from "@/lib/teachers-api";
 import type { Category, SubCategory } from "@/types/category";
 import type { Teacher } from "@/types/teacher";
 
-const API_BASE =
-  typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL
-    ? process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "")
-    : "https://ats.raomtech.com";
+import { getApiBase } from "@/lib/api-config";
+
+const API_BASE = getApiBase();
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
