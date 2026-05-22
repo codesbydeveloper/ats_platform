@@ -45,6 +45,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TablePagination } from "@/components/shared/table-pagination";
 import type { Teacher, TeacherStatus } from "@/types/teacher";
 import { cn } from "@/lib/utils";
 
@@ -81,7 +82,9 @@ interface TeacherTableProps {
     pageSize: number;
     pageCount: number;
     totalCount: number;
-    onPageChange: (pageIndex: number, pageSize: number) => void;
+    onPageChange: (pageIndex: number) => void;
+    onPageSizeChange?: (pageSize: number) => void;
+    pageSizeOptions?: readonly number[];
   };
 }
 
@@ -324,7 +327,7 @@ export function TeacherTable({
     };
     const next =
       typeof updater === "function" ? updater(current) : updater;
-    serverPagination.onPageChange(next.pageIndex, next.pageSize);
+    serverPagination.onPageChange(next.pageIndex);
   };
 
   const table = useReactTable({
@@ -448,40 +451,42 @@ export function TeacherTable({
           </Table>
         </div>
       </div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted-foreground">
-          {serverPagination ? (
-            <>
-              Page {serverPagination.pageIndex + 1} of{" "}
-              {Math.max(1, serverPagination.pageCount)} ·{" "}
-              {serverPagination.totalCount} total
-            </>
-          ) : (
-            <>
-              Page {table.getState().pagination.pageIndex + 1} of{" "}
-              {table.getPageCount() || 1} · {data.length} rows
-            </>
-          )}
-        </p>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            Next
-          </Button>
+      {serverPagination ? (
+        <TablePagination
+          pageIndex={serverPagination.pageIndex}
+          pageSize={serverPagination.pageSize}
+          pageCount={serverPagination.pageCount}
+          totalCount={serverPagination.totalCount}
+          onPageChange={serverPagination.onPageChange}
+          pageSizeOptions={serverPagination.pageSizeOptions}
+          onPageSizeChange={serverPagination.onPageSizeChange}
+        />
+      ) : (
+        <div className="flex flex-col gap-3 border-t border-border/70 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            Page {table.getState().pagination.pageIndex + 1} of{" "}
+            {table.getPageCount() || 1} · {data.length} rows
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+            >
+              Next
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

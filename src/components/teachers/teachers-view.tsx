@@ -52,9 +52,11 @@ import {
 } from "@/lib/teachers-api";
 import { useTeacherStore } from "@/store/teacher-store";
 import { useUiStore } from "@/store/ui-store";
+import {
+  TEACHERS_DEFAULT_PAGE_SIZE,
+  TEACHERS_PAGE_SIZE_OPTIONS,
+} from "@/config/teachers-list";
 import type { Teacher, TeacherStatus } from "@/types/teacher";
-
-const TEACHERS_PAGE_SIZE = 10;
 
 function FilterChips() {
   const filters = useFilterStore((s) => s.filters);
@@ -150,6 +152,7 @@ export function TeachersView() {
   const [resumeDownloadId, setResumeDownloadId] = useState<string | null>(null);
 
   const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState(TEACHERS_DEFAULT_PAGE_SIZE);
   const [fetchKey, setFetchKey] = useState(0);
   const [apiTeachers, setApiTeachers] = useState<Teacher[]>([]);
   const [apiTotal, setApiTotal] = useState(0);
@@ -162,6 +165,7 @@ export function TeachersView() {
       setApiTotal(0);
       setListError(null);
       setPageIndex(0);
+      setPageSize(TEACHERS_DEFAULT_PAGE_SIZE);
     }
   }, [accessToken]);
 
@@ -174,7 +178,7 @@ export function TeachersView() {
       const res = await listTeachersRequest(
         accessToken,
         pageIndex + 1,
-        TEACHERS_PAGE_SIZE
+        pageSize
       );
       if (cancelled) return;
       setListLoading(false);
@@ -189,7 +193,7 @@ export function TeachersView() {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, pageIndex, fetchKey]);
+  }, [accessToken, pageIndex, pageSize, fetchKey]);
 
   useEffect(() => {
     setRowSelection({});
@@ -441,7 +445,7 @@ export function TeachersView() {
       </div>
 
       {useApiList && listLoading ? (
-        <TableSkeleton rows={TEACHERS_PAGE_SIZE} />
+        <TableSkeleton rows={Math.min(pageSize, 12)} />
       ) : useApiList && listError ? (
         <p className="px-1 text-sm text-muted-foreground">
           Could not load this page. Fix the issue above and retry.
@@ -477,14 +481,14 @@ export function TeachersView() {
             useApiList
               ? {
                   pageIndex,
-                  pageSize: TEACHERS_PAGE_SIZE,
-                  pageCount: Math.max(
-                    1,
-                    Math.ceil(apiTotal / TEACHERS_PAGE_SIZE)
-                  ),
+                  pageSize,
+                  pageCount: Math.max(1, Math.ceil(apiTotal / pageSize)),
                   totalCount: apiTotal,
-                  onPageChange: (idx) => {
-                    setPageIndex(idx);
+                  pageSizeOptions: TEACHERS_PAGE_SIZE_OPTIONS,
+                  onPageChange: (idx) => setPageIndex(idx),
+                  onPageSizeChange: (size) => {
+                    setPageSize(size);
+                    setPageIndex(0);
                   },
                 }
               : undefined
