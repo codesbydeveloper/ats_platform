@@ -1,5 +1,5 @@
 /** Live ATS API — override in `.env.local` with NEXT_PUBLIC_API_URL */
-export const DEFAULT_API_URL = "http://localhost:8000";
+export const DEFAULT_API_URL = "https://ats.raomtech.com";
 
 /** Base URL for all browser API calls (no trailing slash). */
 export function getApiBase(): string {
