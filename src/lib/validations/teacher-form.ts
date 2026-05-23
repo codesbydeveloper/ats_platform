@@ -7,55 +7,84 @@ const extraEducationSchema = z.object({
 
 const workSchema = z.object({
   id: z.string(),
-  schoolName: z.string().min(1, "School name is required"),
-  role: z.string().min(1, "Role is required"),
-  from: z.string().min(1, "Start date is required"),
+  schoolName: z.string(),
+  role: z.string(),
+  from: z.string(),
   to: z.string().nullable(),
   currentlyWorking: z.boolean(),
 });
 
-export const teacherFormSchema = z
-  .object({
-    name: z.string().min(2, "Name is required"),
-    mobile: z
-      .string()
-      .min(10, "Enter a valid mobile")
-      .regex(/^[0-9+\-\s]{10,15}$/, "Invalid mobile"),
-    email: z.string().email("Invalid email"),
-    state: z.string().min(1, "State is required"),
-    city: z.string().min(1, "City is required"),
-    address: z.string().min(4, "Address is required"),
-    ugCollege: z.string().min(2, "UG college is required"),
-    pgUniversity: z.string().min(2, "PG university is required"),
-    qualification: z.string().min(2, "Qualification is required"),
-    certifications: z.string().optional(),
-    /** One free-text line per “Add more” click under Educational details. */
-    extraEducation: z.array(extraEducationSchema).optional(),
-    subject: z.string().min(1, "Subject is required"),
-    boards: z.array(z.string()).min(1, "Select at least one board"),
-    grades: z.array(z.string()).min(1, "Select at least one grade band"),
-    roles: z.array(z.string()).min(1, "Select at least one role"),
-    currentLocation: z.string().min(2, "Required"),
-    preferredLocation: z.string().min(2, "Required"),
-    areaOfInterest: z.string().min(2, "Required"),
-    currentSalary: z.coerce.number().min(0, "Must be positive"),
-    experienceYears: z.coerce.number().min(0).max(50),
-    status: z.enum(["active", "inactive", "pending"]),
-    workHistory: z.array(workSchema).min(1, "Add at least one role"),
-    resumeFileName: z.string().nullable(),
-    resumeMime: z.string().nullable(),
-    notes: z.string().optional(),
-    skills: z.array(z.string()).optional(),
-  })
-  .refine(
-    (data) =>
-      data.workHistory.every(
-        (w) => w.currentlyWorking || (!!w.to && w.to.length > 0)
-      ),
-    {
-      message: "Provide end date or mark as currently working",
-      path: ["workHistory"],
-    }
-  );
+/** Permissive schema — required rules come from GET /api/teacher-form. */
+export const teacherFormSchema = z.object({
+  name: z.string(),
+  mobile: z.string(),
+  email: z.string(),
+  state: z.string(),
+  city: z.string(),
+  address: z.string(),
+  ugCollege: z.string(),
+  pgUniversity: z.string(),
+  qualification: z.string(),
+  certifications: z.string().optional(),
+  extraEducation: z.array(extraEducationSchema).optional(),
+  subject: z.string(),
+  boards: z.array(z.string()),
+  grades: z.array(z.string()),
+  roles: z.array(z.string()),
+  currentLocation: z.string(),
+  preferredLocation: z.string(),
+  areaOfInterest: z.string(),
+  currentSalary: z.coerce.number(),
+  experienceYears: z.coerce.number(),
+  status: z.enum(["active", "inactive", "pending"]),
+  workHistory: z.array(workSchema),
+  resumeFileName: z.string().nullable(),
+  resumeMime: z.string().nullable(),
+  notes: z.string().optional(),
+  skills: z.array(z.string()).optional(),
+  customFields: z
+    .record(
+      z.string(),
+      z.union([
+        z.string(),
+        z.number(),
+        z.boolean(),
+        z.array(z.string()),
+      ])
+    )
+    .optional(),
+});
 
 export type TeacherFormValues = z.infer<typeof teacherFormSchema>;
+
+export function emptyTeacherFormValues(): TeacherFormValues {
+  return {
+    name: "",
+    mobile: "",
+    email: "",
+    state: "",
+    city: "",
+    address: "",
+    ugCollege: "",
+    pgUniversity: "",
+    qualification: "",
+    certifications: "",
+    extraEducation: [],
+    subject: "",
+    boards: [],
+    grades: [],
+    roles: [],
+    currentLocation: "",
+    preferredLocation: "",
+    areaOfInterest: "",
+    currentSalary: 0,
+    experienceYears: 0,
+    status: "active",
+    workHistory: [],
+    resumeFileName: null,
+    resumeMime: null,
+    notes: "",
+    skills: [],
+    customFields: {},
+  };
+}

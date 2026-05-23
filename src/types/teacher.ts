@@ -38,6 +38,7 @@ export interface Teacher {
   notes: string;
   status: TeacherStatus;
   skills: string[];
+  customFields?: Record<string, string | number | boolean | string[]>;
   createdAt: string;
 }
 

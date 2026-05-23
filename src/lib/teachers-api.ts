@@ -95,6 +95,7 @@ export function buildTeacherApiPayload(
     total_experience: values.experienceYears,
     internal_notes: values.notes ?? "",
     status: values.status,
+    custom_fields: values.customFields ?? {},
   };
 }
 
@@ -187,6 +188,34 @@ function asNum(v: unknown, fallback = 0): number {
     return Number.isNaN(n) ? fallback : n;
   }
   return fallback;
+}
+
+function parseCustomFields(
+  raw: unknown
+): Record<string, string | number | boolean | string[]> | undefined {
+  if (raw == null) return undefined;
+  let obj: Record<string, unknown>;
+  if (typeof raw === "string") {
+    try {
+      obj = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
+  } else if (typeof raw === "object" && !Array.isArray(raw)) {
+    obj = raw as Record<string, unknown>;
+  } else {
+    return undefined;
+  }
+  const out: Record<string, string | number | boolean | string[]> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+      out[k] = v;
+    } else if (Array.isArray(v)) {
+      const arr = v.filter((x) => typeof x === "string") as string[];
+      if (arr.length) out[k] = arr;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function resumeFileLabel(r: Record<string, unknown>): string | null {
@@ -322,6 +351,7 @@ export function mapApiRowToTeacher(row: unknown): Teacher | null {
     notes: pickStr(r, "internal_notes", "notes") || "",
     status,
     skills: asStrArr(r.skills),
+    customFields: parseCustomFields(r.custom_fields ?? r.customFields),
     createdAt:
       pickStr(r, "created_at", "createdAt", "created") ||
       new Date().toISOString(),

@@ -1,5 +1,7 @@
+import { LOOKUP_MENU_ITEMS, type LookupMenuSlug } from "@/config/lookup-menu";
+import { CITIES, EXPERIENCE_BUCKETS, STATES } from "@/data/constants";
+import { findCategoryForLookup } from "@/lib/lookup-category";
 import type { Category } from "@/types/category";
-import { EXPERIENCE_BUCKETS } from "@/data/constants";
 import type { TeacherFilters } from "@/store/filter-store";
 
 export type CategoryFilterFieldKey =
@@ -8,7 +10,9 @@ export type CategoryFilterFieldKey =
   | "grades"
   | "boards"
   | "skills"
-  | "states";
+  | "states"
+  | "cities"
+  | "status";
 
 export type TeacherFilterField = CategoryFilterFieldKey | "experience";
 
@@ -53,7 +57,70 @@ export function resolveTeacherFilterField(
   if (n === "state" || n === "states" || n.includes("state")) {
     return "states";
   }
+  if (n === "city" || n === "cities" || n.includes("city")) {
+    return "cities";
+  }
+  if (n === "status" || n.includes("status")) {
+    return "status";
+  }
   return null;
+}
+
+function namesFromCategory(cat: Category | undefined): string[] {
+  if (!cat) return [];
+  return Array.from(
+    new Set(
+      cat.subcategories
+        .map((s) => s.name.trim())
+        .filter((n) => n.length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b));
+}
+
+const ALL_CITIES = Array.from(new Set(Object.values(CITIES).flat())).sort(
+  (a, b) => a.localeCompare(b)
+);
+
+const STATE_CITY_FALLBACKS: Record<"states" | "cities", string[]> = {
+  states: [...STATES],
+  cities: ALL_CITIES,
+};
+
+const ADVANCED_FILTER_SLUGS: {
+  slug: LookupMenuSlug;
+  field: "states" | "cities";
+  label: string;
+}[] = [
+  { slug: "state-wise", field: "states", label: "State" },
+  { slug: "city-wise", field: "cities", label: "City" },
+];
+
+/** Advanced filters drawer: State and City only (from Filter lists + fallbacks). */
+export function buildTeacherAdvancedFilters(
+  categories: Category[]
+): ApiCategoryFilterRow[] {
+  const rows: ApiCategoryFilterRow[] = [];
+
+  for (const { slug, field, label } of ADVANCED_FILTER_SLUGS) {
+    const item = LOOKUP_MENU_ITEMS.find((i) => i.slug === slug);
+    if (!item) continue;
+
+    const cat = findCategoryForLookup(categories, item);
+    const apiOptions = namesFromCategory(cat);
+    const options =
+      apiOptions.length > 0 ? apiOptions : STATE_CITY_FALLBACKS[field];
+
+    if (options.length === 0) continue;
+
+    rows.push({
+      categoryId: cat?.id ?? slug,
+      label,
+      options,
+      field,
+    });
+  }
+
+  return rows;
 }
 
 /** One filter dropdown per category from GET /api/categories/all (no static demo lists). */

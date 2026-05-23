@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/sheet";
 import { listAllCategoriesRequest } from "@/lib/categories-api";
 import {
-  buildApiCategoryFilters,
+  buildTeacherAdvancedFilters,
   getTeacherFilterValues,
   patchTeacherFilterValues,
   type ApiCategoryFilterRow,
@@ -57,12 +57,12 @@ export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
       setOptionsLoading(false);
 
       if (result.ok) {
-        setApiFilters(buildApiCategoryFilters(result.categories));
+        setApiFilters(buildTeacherAdvancedFilters(result.categories));
         setLoadFailed(false);
         return;
       }
 
-      setApiFilters([]);
+      setApiFilters(buildTeacherAdvancedFilters([]));
       setLoadFailed(true);
     });
 
@@ -100,19 +100,13 @@ export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading…
               </div>
-            ) : loadFailed ? (
-              <p className="text-sm text-muted-foreground">
-                Could not load filter lists. Check that the API is running.
-              </p>
-            ) : apiFilters.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No filter groups yet. Add them under Filter lists in the menu,
-                then open filters again.
-              </p>
             ) : (
               apiFilters
-                .filter((row): row is ApiCategoryFilterRow & { field: TeacherFilterField } =>
-                  row.field != null
+                .filter(
+                  (
+                    row
+                  ): row is ApiCategoryFilterRow & { field: TeacherFilterField } =>
+                    row.field != null
                 )
                 .map((row) => (
                   <SearchableMultiSelect
@@ -128,6 +122,12 @@ export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
                   />
                 ))
             )}
+            {loadFailed && !optionsLoading ? (
+              <p className="text-xs text-muted-foreground">
+                Using default state and city lists. Filter lists from the API
+                could not be loaded.
+              </p>
+            ) : null}
           </div>
         </ScrollArea>
         <SheetFooter className="gap-2 border-t pt-4">

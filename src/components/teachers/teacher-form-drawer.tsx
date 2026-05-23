@@ -2,31 +2,15 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useFieldArray, useForm, useWatch, type Resolver } from "react-hook-form";
-import { Plus, X } from "lucide-react";
+import { useForm, useWatch, type Resolver } from "react-hook-form";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ResumeQuickUpload } from "@/components/teachers/resume-upload";
-import { Badge } from "@/components/ui/badge";
+import { TeacherFormDynamicSections } from "@/components/teachers/teacher-form-dynamic-sections";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Form } from "@/components/ui/form";
 import {
   Sheet,
   SheetContent,
@@ -35,13 +19,19 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Textarea } from "@/components/ui/textarea";
-import { CITIES, BOARDS, GRADES, ROLES, STATES, SUBJECTS } from "@/data/constants";
+import { getTeacherFormRequest } from "@/lib/teacher-form-api";
 import {
+  fetchTeacherFormOptions,
+  getEmptyTeacherFormOptions,
+  type TeacherFormOptionsMap,
+} from "@/lib/teacher-form-options";
+import { parsedResumeToFormPatch } from "@/lib/parse-resume-to-form";
+import { validateDynamicTeacherForm } from "@/lib/validate-dynamic-teacher-form";
+import {
+  emptyTeacherFormValues,
   teacherFormSchema,
   type TeacherFormValues,
 } from "@/lib/validations/teacher-form";
-import { parsedResumeToFormPatch } from "@/lib/parse-resume-to-form";
 import {
   applyCreatedTeacherFromApi,
   createTeacherRequest,
@@ -49,15 +39,15 @@ import {
   updateTeacherRequest,
 } from "@/lib/teachers-api";
 import { useAuthStore } from "@/store/auth-store";
+import type { ApiTeacherFormConfig } from "@/types/teacher-form-api";
 import type { Teacher } from "@/types/teacher";
 import { createTeacherId, uid } from "@/utils/id";
-import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 
-function defaultWork(): TeacherFormValues["workHistory"][number] {
+function defaultWork(role = ""): TeacherFormValues["workHistory"][number] {
   return {
     id: uid("work"),
     schoolName: "",
-    role: ROLES[0]!,
+    role,
     from: new Date().toISOString().slice(0, 10),
     to: null,
     currentlyWorking: true,
@@ -102,38 +92,12 @@ export function teacherToFormValues(t: Teacher): TeacherFormValues {
     resumeMime: t.resumeMime,
     notes: t.notes,
     skills: t.skills,
+    customFields: t.customFields ?? {},
   };
 }
 
 function emptyForm(): TeacherFormValues {
-  return {
-    name: "",
-    mobile: "",
-    email: "",
-    state: STATES[0]!,
-    city: CITIES[STATES[0]!]![0]!,
-    address: "",
-    ugCollege: "",
-    pgUniversity: "",
-    qualification: "",
-    certifications: "",
-    extraEducation: [],
-    subject: SUBJECTS[0]!,
-    boards: [BOARDS[0]!],
-    grades: [GRADES[0]!],
-    roles: [ROLES[0]!],
-    currentLocation: "",
-    preferredLocation: "",
-    areaOfInterest: "",
-    currentSalary: 0,
-    experienceYears: 0,
-    status: "active",
-    workHistory: [defaultWork()],
-    resumeFileName: null,
-    resumeMime: null,
-    notes: "",
-    skills: [],
-  };
+  return emptyTeacherFormValues();
 }
 
 function toIsoSafe(value: string | null | undefined): string | null {
@@ -189,139 +153,10 @@ function toTeacher(
     resumeMime: values.resumeMime,
     notes: values.notes ?? "",
     status: values.status ?? base?.status ?? "active",
-    skills: values.skills?.length ? values.skills : ["General"],
+    skills: values.skills?.length ? values.skills : [],
+    customFields: values.customFields ?? {},
     createdAt: base?.createdAt ?? new Date().toISOString(),
   };
-}
-
-function MultiToggle({
-  label,
-  options,
-  value,
-  onChange,
-  minSelected = 1,
-}: {
-  label: string;
-  options: readonly string[];
-  value: string[];
-  onChange: (next: string[]) => void;
-  minSelected?: number;
-}) {
-  const toggle = (item: string) => {
-    if (value.includes(item)) {
-      if (value.length <= minSelected) return;
-      onChange(value.filter((v) => v !== item));
-    } else {
-      onChange([...value, item]);
-    }
-  };
-  return (
-    <div className="space-y-2">
-      <p className="text-sm font-medium">{label}</p>
-      <div className="flex flex-wrap gap-2">
-        {options.map((opt) => {
-          const active = value.includes(opt);
-          return (
-            <Button
-              key={opt}
-              type="button"
-              size="sm"
-              variant={active ? "default" : "outline"}
-              className="rounded-full"
-              onClick={() => toggle(opt)}
-            >
-              {opt}
-            </Button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function SkillsTagsEditor({
-  value,
-  onChange,
-}: {
-  value: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const [text, setText] = useState("");
-
-  const mergeUnique = (base: string[], additions: string[]) => {
-    const next = [...base];
-    for (const raw of additions) {
-      const t = raw.trim();
-      if (!t) continue;
-      if (!next.some((x) => x.toLowerCase() === t.toLowerCase())) {
-        next.push(t);
-      }
-    }
-    return next;
-  };
-
-  const addFromInput = () => {
-    const parts = text
-      .split(/[,;\n]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (!parts.length) return;
-    onChange(mergeUnique(value, parts));
-    setText("");
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Input
-          id="skills-tags-input"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              addFromInput();
-            }
-          }}
-          placeholder="Type skills, comma-separated — Enter or Add"
-          className="sm:flex-1"
-        />
-        <Button
-          type="button"
-          variant="secondary"
-          className="shrink-0 sm:w-auto"
-          onClick={addFromInput}
-        >
-          Add
-        </Button>
-      </div>
-      {value.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {value.map((tag) => (
-            <Badge
-              key={tag}
-              variant="secondary"
-              className="cursor-pointer gap-1 pr-1.5 font-normal"
-              role="button"
-              tabIndex={0}
-              onClick={() => onChange(value.filter((v) => v !== tag))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onChange(value.filter((v) => v !== tag));
-                }
-              }}
-            >
-              {tag}
-              <span className="text-muted-foreground" aria-hidden>
-                ×
-              </span>
-            </Badge>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 interface TeacherFormDrawerProps {
@@ -332,8 +167,6 @@ interface TeacherFormDrawerProps {
   teachers: Teacher[];
   onSave: (teacher: Teacher) => void;
 }
-
-const DRAFT_KEY = "ats-teacher-form-draft";
 
 export function TeacherFormDrawer({
   open,
@@ -346,7 +179,14 @@ export function TeacherFormDrawer({
   const [confirmClose, setConfirmClose] = useState(false);
   const [saving, setSaving] = useState(false);
   const [parsingResume, setParsingResume] = useState(false);
-  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [formConfig, setFormConfig] = useState<ApiTeacherFormConfig>({
+    sections: [],
+  });
+  const [loadingFormConfig, setLoadingFormConfig] = useState(false);
+  const [layoutErrors, setLayoutErrors] = useState<Record<string, string>>({});
+  const [formOptions, setFormOptions] = useState<TeacherFormOptionsMap>(
+    getEmptyTeacherFormOptions()
+  );
   const resumeFileRef = useRef<File | null>(null);
 
   const form = useForm<TeacherFormValues>({
@@ -361,61 +201,63 @@ export function TeacherFormDrawer({
       return;
     }
     if (mode === "add") {
-      const raw = localStorage.getItem(DRAFT_KEY);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw) as Partial<TeacherFormValues>;
-          form.reset({ ...emptyForm(), ...parsed });
-          toast.message("Draft restored", {
-            description: "Autosaved draft loaded from this browser.",
-          });
-          return;
-        } catch {
-          /* fall through */
-        }
+      try {
+        localStorage.removeItem("ats-teacher-form-draft");
+      } catch {
+        /* ignore */
       }
       form.reset(emptyForm());
     }
   }, [open, mode, teacher, form]);
 
-  const { fields, remove, append: appendWork } = useFieldArray({
-    control: form.control,
-    name: "workHistory",
-  });
+  useEffect(() => {
+    if (!open) return;
+    const token = useAuthStore.getState().accessToken;
+    setLoadingFormConfig(true);
+    void Promise.all([
+      getTeacherFormRequest(token),
+      fetchTeacherFormOptions(token),
+    ]).then(([formResult, options]) => {
+      setLoadingFormConfig(false);
+      setFormOptions(options);
+      if (!formResult.ok) {
+        toast.error("Could not load form layout", {
+          description: formResult.message,
+        });
+        return;
+      }
+      setFormConfig(formResult.data);
+      const hasWork = formResult.data.sections.some((s) =>
+        s.fields.some((f) => f.type === "work_experience")
+      );
+      if (hasWork && form.getValues("workHistory").length === 0) {
+        const roleField = formResult.data.sections
+          .flatMap((s) => s.fields)
+          .find((f) => f.key === "teacher_roles" || f.key === "roles");
+        form.setValue("workHistory", [
+          defaultWork(roleField?.options?.[0] ?? options.bySlug["teacher-roles"]?.[0] ?? ""),
+        ]);
+      }
+    });
+  }, [open, form]);
 
-  const {
-    fields: extraEducationFields,
-    append: appendExtraEducation,
-    remove: removeExtraEducation,
-  } = useFieldArray({
-    control: form.control,
-    name: "extraEducation",
-  });
+  const selectedState = useWatch({ control: form.control, name: "state" });
+
+  useEffect(() => {
+    if (!open || !selectedState?.trim()) return;
+    const cities = formOptions.citiesByState[selectedState];
+    if (!cities?.length) return;
+    const currentCity = form.getValues("city");
+    if (!currentCity || !cities.includes(currentCity)) {
+      form.setValue("city", cities[0]!);
+    }
+  }, [open, selectedState, formOptions, form]);
 
   const isDirty = form.formState.isDirty;
-  const watched = useWatch({ control: form.control });
-  const state = useWatch({ control: form.control, name: "state" });
-  const workHistoryWatch =
-    useWatch({ control: form.control, name: "workHistory" }) ?? [];
   const resumeFileName = useWatch({
     control: form.control,
     name: "resumeFileName",
   });
-
-  useEffect(() => {
-    if (!open || mode === "edit") return;
-    if (draftTimer.current) clearTimeout(draftTimer.current);
-    draftTimer.current = setTimeout(() => {
-      try {
-        localStorage.setItem(DRAFT_KEY, JSON.stringify(watched));
-      } catch {
-        /* ignore */
-      }
-    }, 600);
-    return () => {
-      if (draftTimer.current) clearTimeout(draftTimer.current);
-    };
-  }, [watched, open, mode]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -482,11 +324,23 @@ export function TeacherFormDrawer({
     }
   };
 
-  /** Edit: send current form values to API without full Zod re-validation (partial updates OK). */
+  const applyLayoutValidation = (values: TeacherFormValues): boolean => {
+    const errs = validateDynamicTeacherForm(values, formConfig);
+    setLayoutErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      toast.error("Form incomplete", {
+        description: "Fix the fields marked in red (scroll up if needed).",
+      });
+      return false;
+    }
+    return true;
+  };
+
   const runEditSave = async () => {
+    const values = form.getValues();
+    if (!applyLayoutValidation(values)) return;
     setSaving(true);
     try {
-      const values = form.getValues();
       const built = toTeacher(values, teachers, teacher ?? undefined);
       let saved: Teacher = built;
       const token = useAuthStore.getState().accessToken;
@@ -532,6 +386,7 @@ export function TeacherFormDrawer({
 
   const submitAdd = form.handleSubmit(
     async (values) => {
+      if (!applyLayoutValidation(values)) return;
       setSaving(true);
       try {
         const token = useAuthStore.getState().accessToken;
@@ -560,7 +415,6 @@ export function TeacherFormDrawer({
         const merged = applyCreatedTeacherFromApi(api.data, built);
         onSave(merged);
         resumeFileRef.current = null;
-        localStorage.removeItem(DRAFT_KEY);
         toast.success("Teacher added", {
           description: `${merged.name} is synced with the server.`,
         });
@@ -593,8 +447,6 @@ export function TeacherFormDrawer({
     submitAdd(e);
   };
 
-  const cityOptions = CITIES[state ?? STATES[0]!] ?? [];
-
   return (
     <>
       <Sheet open={open} onOpenChange={requestClose}>
@@ -605,9 +457,7 @@ export function TeacherFormDrawer({
                 <SheetTitle>
                   {mode === "add" ? "Add teacher" : "Edit teacher"}
                 </SheetTitle>
-                <SheetDescription>
-                  Structured intake inspired by enterprise ATS workflows.
-                </SheetDescription>
+             
               </SheetHeader>
               <ResumeQuickUpload
                 fileName={resumeFileName ?? null}
@@ -631,589 +481,19 @@ export function TeacherFormDrawer({
               className="flex flex-1 flex-col gap-6 py-2"
               onSubmit={handleFormSubmit}
             >
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Personal details</CardTitle>
-                </CardHeader>
-                <CardContent className="grid gap-4 md:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Name</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="mobile"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Mobile</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="email"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email</FormLabel>
-                        <FormControl>
-                          <Input type="email" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="status"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Employment status</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Status" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="active">Active</SelectItem>
-                            <SelectItem value="inactive">Inactive</SelectItem>
-                            <SelectItem value="pending">Pending</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="state"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>State</FormLabel>
-                        <Select
-                          onValueChange={(v) => {
-                            field.onChange(v);
-                            const first = CITIES[v]?.[0];
-                            if (first) form.setValue("city", first);
-                          }}
-                          value={field.value}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="State" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {STATES.map((s) => (
-                              <SelectItem key={s} value={s}>
-                                {s}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="city"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>City</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="City" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {cityOptions.map((c) => (
-                              <SelectItem key={c} value={c}>
-                                {c}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="address"
-                    render={({ field }) => (
-                      <FormItem className="md:col-span-2">
-                        <FormLabel>Address</FormLabel>
-                        <FormControl>
-                          <Textarea rows={3} {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Educational details</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <FormField
-                      control={form.control}
-                      name="ugCollege"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>UG college</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="pgUniversity"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>PG university</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="qualification"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Qualification</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="certifications"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Certifications</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  {extraEducationFields.map((field, index) => (
-                    <FormField
-                      key={field.id}
-                      control={form.control}
-                      name={`extraEducation.${index}.value`}
-                      render={({ field: f }) => (
-                        <FormItem>
-                          <div className="flex gap-2">
-                            <FormControl>
-                              <Input
-                                {...f}
-                                placeholder="Additional detail"
-                              />
-                            </FormControl>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-10 w-10 shrink-0"
-                              aria-label={`Remove additional detail ${index + 1}`}
-                              onClick={() => removeExtraEducation(index)}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  ))}
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() =>
-                      appendExtraEducation({
-                        id: uid("edu-extra"),
-                        value: "",
-                      })
-                    }
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add more
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Teaching details</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <FormField
-                    control={form.control}
-                    name="subject"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Subject taught</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {SUBJECTS.map((s) => (
-                              <SelectItem key={s} value={s}>
-                                {s}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="boards"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <MultiToggle
-                            label="Boards taught"
-                            options={BOARDS}
-                            value={field.value}
-                            onChange={field.onChange}
-                            minSelected={1}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="grades"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <MultiToggle
-                            label="Grades taught"
-                            options={GRADES}
-                            value={field.value}
-                            onChange={field.onChange}
-                            minSelected={1}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="roles"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <MultiToggle
-                            label="Teacher roles"
-                            options={ROLES}
-                            value={field.value}
-                            onChange={field.onChange}
-                            minSelected={1}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Professional details</CardTitle>
-                </CardHeader>
-                <CardContent className="grid gap-4 md:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="currentLocation"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Current location</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="preferredLocation"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Preferred location</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="areaOfInterest"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Area of interest</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="currentSalary"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Current salary (₹)</FormLabel>
-                        <FormControl>
-                          <Input type="number" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="experienceYears"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Total experience (years)</FormLabel>
-                        <FormControl>
-                          <Input type="number" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Work experience</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {fields.map((field, index) => (
-                    <div
-                      key={field.id}
-                      className="space-y-3 rounded-lg border bg-muted/30 p-4"
-                    >
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium">Role {index + 1}</p>
-                        {fields.length > 1 ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => remove(index)}
-                          >
-                            Remove
-                          </Button>
-                        ) : null}
-                      </div>
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <FormField
-                          control={form.control}
-                          name={`workHistory.${index}.schoolName`}
-                          render={({ field: f }) => (
-                            <FormItem className="md:col-span-2">
-                              <FormLabel>School name</FormLabel>
-                              <FormControl>
-                                <Input {...f} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`workHistory.${index}.role`}
-                          render={({ field: f }) => (
-                            <FormItem>
-                              <FormLabel>Role</FormLabel>
-                              <Select
-                                onValueChange={f.onChange}
-                                value={f.value}
-                              >
-                                <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {ROLES.map((r) => (
-                                    <SelectItem key={r} value={r}>
-                                      {r}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`workHistory.${index}.from`}
-                          render={({ field: f }) => (
-                            <FormItem>
-                              <FormLabel>From</FormLabel>
-                              <FormControl>
-                                <Input type="date" {...f} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`workHistory.${index}.to`}
-                          render={({ field: f }) => (
-                            <FormItem>
-                              <FormLabel>To</FormLabel>
-                              <FormControl>
-                                <Input
-                                  type="date"
-                                  disabled={workHistoryWatch[index]?.currentlyWorking}
-                                  {...f}
-                                  value={f.value ?? ""}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`workHistory.${index}.currentlyWorking`}
-                          render={({ field: f }) => (
-                            <FormItem className="flex flex-row items-center gap-2 space-y-0 md:col-span-2">
-                              <FormControl>
-                                <Checkbox
-                                  checked={f.value}
-                                  onCheckedChange={(c) => f.onChange(!!c)}
-                                />
-                              </FormControl>
-                              <FormLabel className="!mt-0 font-normal">
-                                Currently working here
-                              </FormLabel>
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => appendWork(defaultWork())}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add role
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Skills & tags</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <FormField
-                    control={form.control}
-                    name="skills"
-                    render={({ field }) => (
-                      <FormItem>
-                        <SkillsTagsEditor
-                          value={field.value ?? []}
-                          onChange={field.onChange}
-                        />
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Notes</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <FormField
-                    control={form.control}
-                    name="notes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Internal notes</FormLabel>
-                        <FormControl>
-                          <Textarea rows={5} {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </CardContent>
-              </Card>
+              {loadingFormConfig ? (
+                <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Loading form…
+                </div>
+              ) : (
+                <TeacherFormDynamicSections
+                  config={formConfig}
+                  form={form}
+                  formOptions={formOptions}
+                  layoutErrors={layoutErrors}
+                />
+              )}
 
               <SheetFooter className="sticky bottom-0 mt-auto border-t bg-background/95 py-4 backdrop-blur">
                 <Button
@@ -1223,8 +503,12 @@ export function TeacherFormDrawer({
                 >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={saving}>
-                  {saving ? "Saving…" : mode === "add" ? "Create teacher" : "Save changes"}
+                <Button type="submit" disabled={saving || loadingFormConfig}>
+                  {saving
+                    ? "Saving…"
+                    : mode === "add"
+                      ? "Create teacher"
+                      : "Save changes"}
                 </Button>
               </SheetFooter>
             </form>
