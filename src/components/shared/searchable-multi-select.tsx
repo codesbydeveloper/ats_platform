@@ -19,6 +19,10 @@ interface SearchableMultiSelectProps {
   selected: string[];
   onChange: (next: string[]) => void;
   searchPlaceholder?: string;
+  /** When true, label is omitted (use parent FormLabel). */
+  hideLabel?: boolean;
+  /** Override empty-state trigger text (default: "Select {label}…"). */
+  placeholder?: string;
 }
 
 export function SearchableMultiSelect({
@@ -27,6 +31,8 @@ export function SearchableMultiSelect({
   selected,
   onChange,
   searchPlaceholder,
+  hideLabel = false,
+  placeholder,
 }: SearchableMultiSelectProps) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -47,14 +53,16 @@ export function SearchableMultiSelect({
 
   const summary =
     selected.length === 0
-      ? `Select ${label.toLowerCase()}…`
+      ? (placeholder ?? `Select ${label.toLowerCase()}…`)
       : selected.length <= 2
         ? selected.join(" · ")
         : `${selected.length} selected`;
 
   return (
     <div className="space-y-2">
-      <Label className="text-xs uppercase text-muted-foreground">{label}</Label>
+      {hideLabel ? null : (
+        <Label className="text-xs uppercase text-muted-foreground">{label}</Label>
+      )}
       <Popover
         modal={false}
         open={open}

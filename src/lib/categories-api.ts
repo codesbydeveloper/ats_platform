@@ -1,3 +1,7 @@
+import {
+  normalizeCategoryFilterFields,
+  type CategoryFilterField,
+} from "@/lib/category-filter-fields";
 import { mapApiRowToTeacher } from "@/lib/teachers-api";
 import type { Category, SubCategory } from "@/types/category";
 import type { Teacher } from "@/types/teacher";
@@ -194,7 +198,7 @@ export async function listCategoriesRequest(
 }
 
 export type ListAllCategoriesResult =
-  | { ok: true; categories: Category[] }
+  | { ok: true; categories: Category[]; filterFields: CategoryFilterField[] }
   | { ok: false; message: string };
 
 export type LookupFieldOption = {
@@ -431,7 +435,11 @@ export async function listAllCategoriesRequest(
     return { ok: false, message: apiErrorMessage(data, res.status) };
   }
 
-  return { ok: true, categories: normalizeCategoriesList(data) };
+  return {
+    ok: true,
+    categories: normalizeCategoriesList(data),
+    filterFields: normalizeCategoryFilterFields(data),
+  };
 }
 
 export type CreateCategoryResult =

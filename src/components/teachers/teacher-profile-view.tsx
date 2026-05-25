@@ -143,6 +143,7 @@ export function TeacherProfileView({
           <ProfileField label="Full name" value={display(teacher.name)} />
           <ProfileField label="Email" value={display(teacher.email)} />
           <ProfileField label="Mobile" value={display(teacher.mobile)} />
+          <ProfileField label="Country" value={display(teacher.country)} />
           <ProfileField label="State" value={display(teacher.state)} />
           <ProfileField label="City" value={display(teacher.city)} />
           <ProfileField

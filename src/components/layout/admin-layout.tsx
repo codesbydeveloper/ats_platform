@@ -8,11 +8,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <MobileSidebar />
-      <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
+      <div className="flex min-h-svh w-full flex-col bg-background [--app-header:3.5rem]">
         <AppBrandHeader />
-        <div className="flex min-h-0 flex-1 items-stretch overflow-hidden">
-          <Sidebar />
-          <main className="app-surface min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
+        <div className="flex flex-1 items-start">
+          <Sidebar className="sticky top-[var(--app-header)] hidden h-[calc(100svh-var(--app-header))] shrink-0 md:flex md:flex-col" />
+          <main className="app-surface min-w-0 flex-1 overflow-x-hidden p-4 md:p-8">
             {children}
           </main>
         </div>

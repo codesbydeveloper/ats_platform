@@ -21,8 +21,6 @@ import type { DashboardData } from "@/types/dashboard";
 
 const STAT_ICONS: Record<string, LucideIcon> = {
   total_teachers: Users,
-  active_teachers: Users,
-  unique_subjects: FileText,
   resumes_on_file: FileText,
 };
 
@@ -68,8 +66,8 @@ export default function DashboardPage() {
           title="Dashboard"
           description="Live metrics across your roster."
         />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid gap-4 md:grid-cols-2">
+          {Array.from({ length: 2 }).map((_, i) => (
             <StatsCardSkeleton key={i} />
           ))}
         </div>
@@ -94,7 +92,7 @@ export default function DashboardPage() {
         </Button>
       </PageHeader>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2">
         {stats.map((stat) => (
           <StatsCard
             key={stat.key}

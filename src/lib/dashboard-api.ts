@@ -78,23 +78,6 @@ const STAT_DEFS: {
     trendKeys: ["total_teachers_change_label", "total_teachers_change_percent"],
   },
   {
-    keys: ["active_teachers", "activeTeachers", "active", "active_count"],
-    title: "Active teachers",
-    hint: "Ready for placement",
-    statKey: "active_teachers",
-  },
-  {
-    keys: [
-      "unique_subjects",
-      "uniqueSubjects",
-      "subjects_count",
-      "subjectsCount",
-    ],
-    title: "Unique subjects",
-    hint: "Coverage breadth",
-    statKey: "unique_subjects",
-  },
-  {
     keys: [
       "resumes_on_file",
       "resumesOnFile",

@@ -1,4 +1,7 @@
 import { getApiBase } from "@/lib/api-config";
+import type { LookupMenuSlug } from "@/config/lookup-menu";
+import type { ListLookupFieldOptionsResult } from "@/lib/categories-api";
+import { listTeacherFormFieldOptions } from "@/lib/teacher-form-select-fields";
 import type {
   ApiTeacherFormConfig,
   ApiTeacherFormField,
@@ -41,9 +44,16 @@ function normalizeField(raw: Record<string, unknown>): ApiTeacherFormField {
   const options = Array.isArray(optionsRaw)
     ? optionsRaw.map(String).filter(Boolean)
     : undefined;
+  const mapsTo =
+    raw.mapsTo != null
+      ? String(raw.mapsTo)
+      : raw.maps_to != null
+        ? String(raw.maps_to)
+        : undefined;
+  const key = String(raw.key ?? mapsTo ?? "");
   return {
-    id: String(raw.id ?? raw.key ?? ""),
-    key: String(raw.key ?? ""),
+    id: String(raw.id ?? key ?? ""),
+    key,
     label: String(raw.label ?? raw.name ?? "Field"),
     type: String(raw.type ?? "text") as ApiTeacherFormField["type"],
     required: Boolean(raw.required ?? raw.is_required ?? false),
@@ -57,7 +67,19 @@ function normalizeField(raw: Record<string, unknown>): ApiTeacherFormField {
     sectionId: raw.sectionId != null ? String(raw.sectionId) : raw.section_id != null ? String(raw.section_id) : undefined,
     system: raw.system != null ? Boolean(raw.system) : undefined,
     deletable: raw.deletable != null ? Boolean(raw.deletable) : undefined,
+    filter:
+      raw.filter != null
+        ? Number(raw.filter) > 0 || raw.filter === true
+        : undefined,
   };
+}
+
+export function isFieldFilterEnabled(field: {
+  filter?: boolean | number;
+}): boolean {
+  const f = field.filter;
+  if (f == null) return false;
+  return f === true || Number(f) > 0;
 }
 
 function normalizeSection(raw: Record<string, unknown>): ApiTeacherFormSection {
@@ -147,6 +169,54 @@ export async function getTeacherFormRequest(
     return { ok: false, message: apiErrorMessage(data, res.status) };
   }
   return { ok: true, data: normalizeTeacherFormConfig(data) };
+}
+
+/**
+ * Lookup list options from GET /api/teacher-form (select / multiselect fields only).
+ */
+export async function listTeacherFormLookupOptionsRequest(
+  accessToken: string | null,
+  slug: string,
+  page = 1,
+  limit = 10,
+  search = ""
+): Promise<ListLookupFieldOptionsResult> {
+  const formResult = await getTeacherFormRequest(accessToken);
+  if (!formResult.ok) {
+    return { ok: false, message: formResult.message };
+  }
+
+  const listed = listTeacherFormFieldOptions(
+    formResult.data,
+    slug as LookupMenuSlug,
+    page,
+    limit,
+    search
+  );
+
+  if (!listed) {
+    return {
+      ok: false,
+      message: `No select/multiselect field found in teacher-form for "${slug}".`,
+    };
+  }
+
+  return {
+    ok: true,
+    options: listed.options,
+    pagination: {
+      slug,
+      field: listed.field.label,
+      parent: null,
+      page: listed.page,
+      limit: listed.limit,
+      total: listed.total,
+      totalPages: listed.totalPages,
+      hasNextPage: listed.hasNextPage,
+      hasPrevPage: listed.hasPrevPage,
+      count: listed.options.length,
+    },
+  };
 }
 
 /** POST /api/teacher-form/sections */

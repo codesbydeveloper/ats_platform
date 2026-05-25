@@ -27,7 +27,7 @@ export function Sidebar({ className }: { className?: string }) {
       animate={{ width: collapsed ? 72 : 260 }}
       transition={{ type: "spring", stiffness: 320, damping: 32 }}
       className={cn(
-        "hidden h-full min-h-0 shrink-0 self-stretch border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex md:flex-col",
+        "hidden shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex md:flex-col",
         className
       )}
     >

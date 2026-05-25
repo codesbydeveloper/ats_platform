@@ -2,19 +2,23 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm, useWatch, type Resolver } from "react-hook-form";
+import {
+  useForm,
+  useWatch,
+  type Resolver,
+  type UseFormReturn,
+} from "react-hook-form";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
-import { ResumeQuickUpload } from "@/components/teachers/resume-upload";
+import { TeacherResumeActions } from "@/components/teachers/resume-upload";
 import { TeacherFormDynamicSections } from "@/components/teachers/teacher-form-dynamic-sections";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
   SheetFooter,
   SheetHeader,
   SheetTitle,
@@ -26,6 +30,16 @@ import {
   type TeacherFormOptionsMap,
 } from "@/lib/teacher-form-options";
 import { parsedResumeToFormPatch } from "@/lib/parse-resume-to-form";
+import {
+  mergeApiStringArrays,
+  mergeMultiselectFromCustom,
+  multiselectHasValue,
+  parseApiStringArray,
+} from "@/lib/multiselect-form-value";
+import {
+  flattenFormFieldErrors,
+  formatValidationMessages,
+} from "@/lib/form-validation-errors";
 import { validateDynamicTeacherForm } from "@/lib/validate-dynamic-teacher-form";
 import {
   emptyTeacherFormValues,
@@ -36,49 +50,71 @@ import {
   applyCreatedTeacherFromApi,
   createTeacherRequest,
   parseResumeRequest,
+  sanitizeApiText,
+  sanitizeTeacherFormValues,
   updateTeacherRequest,
 } from "@/lib/teachers-api";
 import { useAuthStore } from "@/store/auth-store";
 import type { ApiTeacherFormConfig } from "@/types/teacher-form-api";
 import type { Teacher } from "@/types/teacher";
+import {
+  getCityNamesForState,
+  getDefaultCityForState,
+  getStateNamesForCountry,
+} from "@/lib/locations";
+import {
+  configHasWorkExperienceRows,
+  defaultWorkEntry,
+  EMPLOYED_FIELD_KEY,
+  employedValueFromSalary,
+} from "@/lib/work-experience-form";
 import { createTeacherId, uid } from "@/utils/id";
-
-function defaultWork(role = ""): TeacherFormValues["workHistory"][number] {
-  return {
-    id: uid("work"),
-    schoolName: "",
-    role,
-    from: new Date().toISOString().slice(0, 10),
-    to: null,
-    currentlyWorking: true,
-  };
-}
 
 export function teacherToFormValues(t: Teacher): TeacherFormValues {
   return {
-    name: t.name,
-    mobile: t.mobile,
-    email: t.email,
-    state: t.state,
-    city: t.city,
-    address: t.address,
-    ugCollege: t.ugCollege,
-    pgUniversity: t.pgUniversity,
-    qualification: t.qualification,
-    certifications: t.certifications,
+    name: sanitizeApiText(t.name),
+    mobile: sanitizeApiText(t.mobile),
+    email: sanitizeApiText(t.email),
+    country: sanitizeApiText(t.country) || "India",
+    state: sanitizeApiText(t.state),
+    city: sanitizeApiText(t.city),
+    address: sanitizeApiText(t.address),
+    ugCollege: sanitizeApiText(t.ugCollege),
+    pgUniversity: sanitizeApiText(t.pgUniversity),
+    qualification: sanitizeApiText(t.qualification),
+    certifications: mergeMultiselectFromCustom(
+      t.certifications,
+      t.customFields?.certifications
+    ),
     extraEducation: (t.extraEducation ?? []).map((value) => ({
       id: uid("edu-extra"),
       value,
     })),
-    subject: t.subject,
+    subject: mergeMultiselectFromCustom(
+      t.subject,
+      t.customFields?.subject_taught
+    ),
     boards: t.boards,
     grades: t.grades,
-    roles: t.roles,
-    currentLocation: t.currentLocation,
-    preferredLocation: t.preferredLocation,
-    areaOfInterest: t.areaOfInterest,
-    currentSalary: t.currentSalary,
-    experienceYears: t.experienceYears,
+    roles: mergeApiStringArrays(
+      t.roles,
+      t.customFields?.role,
+      t.customFields?.teacher_roles
+    ),
+    currentLocation: sanitizeApiText(t.currentLocation),
+    preferredLocation: sanitizeApiText(t.preferredLocation),
+    areaOfInterest: mergeMultiselectFromCustom(
+      t.areaOfInterest,
+      t.customFields?.area_of_interest
+    ),
+    currentSalary:
+      t.currentSalary > 0
+        ? t.currentSalary
+        : Number(t.customFields?.salary) || 0,
+    experienceYears:
+      t.experienceYears > 0
+        ? t.experienceYears
+        : Number(t.customFields?.total_years_experience) || 0,
     status: t.status,
     workHistory: t.workHistory.map((w) => ({
       id: w.id,
@@ -90,7 +126,7 @@ export function teacherToFormValues(t: Teacher): TeacherFormValues {
     })),
     resumeFileName: t.resumeFileName,
     resumeMime: t.resumeMime,
-    notes: t.notes,
+    notes: sanitizeApiText(t.notes),
     skills: t.skills,
     customFields: t.customFields ?? {},
   };
@@ -98,6 +134,54 @@ export function teacherToFormValues(t: Teacher): TeacherFormValues {
 
 function emptyForm(): TeacherFormValues {
   return emptyTeacherFormValues();
+}
+
+/** Move legacy customFields multiselect values onto built-in string fields. */
+function migrateMultiselectCustomFields(form: UseFormReturn<TeacherFormValues>) {
+  const cf = form.getValues("customFields") ?? {};
+  const pairs: {
+    formKey: "certifications" | "subject" | "areaOfInterest";
+    apiKey: string;
+  }[] = [
+    { formKey: "certifications", apiKey: "certifications" },
+    { formKey: "subject", apiKey: "subject_taught" },
+    { formKey: "areaOfInterest", apiKey: "area_of_interest" },
+  ];
+
+  for (const { formKey, apiKey } of pairs) {
+    const current = form.getValues(formKey);
+    const legacy = cf[apiKey];
+    if (!multiselectHasValue(current) && multiselectHasValue(legacy)) {
+      form.setValue(
+        formKey,
+        mergeMultiselectFromCustom(String(current ?? ""), legacy),
+        { shouldDirty: false }
+      );
+    }
+  }
+
+  const roles = form.getValues("roles");
+  if (!roles?.length) {
+    const fromLegacy = mergeApiStringArrays(cf.role, cf.teacher_roles);
+    if (fromLegacy.length) {
+      form.setValue("roles", fromLegacy, { shouldDirty: false });
+    }
+  }
+
+  const salary = form.getValues("currentSalary");
+  if (!salary && cf.salary != null && String(cf.salary).trim() !== "") {
+    form.setValue("currentSalary", Number(cf.salary) || 0, {
+      shouldDirty: false,
+    });
+  }
+  const exp = form.getValues("experienceYears");
+  if (!exp && cf.total_years_experience != null) {
+    form.setValue(
+      "experienceYears",
+      Number(cf.total_years_experience) || 0,
+      { shouldDirty: false }
+    );
+  }
 }
 
 function toIsoSafe(value: string | null | undefined): string | null {
@@ -129,6 +213,7 @@ function toTeacher(
     name: values.name,
     email: values.email,
     mobile: values.mobile,
+    country: values.country,
     city: values.city,
     state: values.state,
     address: values.address,
@@ -154,7 +239,7 @@ function toTeacher(
     notes: values.notes ?? "",
     status: values.status ?? base?.status ?? "active",
     skills: values.skills?.length ? values.skills : [],
-    customFields: values.customFields ?? {},
+    customFields: (values.customFields ?? {}) as Teacher["customFields"],
     createdAt: base?.createdAt ?? new Date().toISOString(),
   };
 }
@@ -166,6 +251,8 @@ interface TeacherFormDrawerProps {
   teacher?: Teacher | null;
   teachers: Teacher[];
   onSave: (teacher: Teacher) => void;
+  /** Full-page layout for `/teachers/new` and `/teachers/[id]/edit`; default is side sheet. */
+  layout?: "drawer" | "page";
 }
 
 export function TeacherFormDrawer({
@@ -175,10 +262,13 @@ export function TeacherFormDrawer({
   teacher,
   teachers,
   onSave,
+  layout = "drawer",
 }: TeacherFormDrawerProps) {
+  const isPage = layout === "page";
   const [confirmClose, setConfirmClose] = useState(false);
   const [saving, setSaving] = useState(false);
   const [parsingResume, setParsingResume] = useState(false);
+  const [uploadingResume, setUploadingResume] = useState(false);
   const [formConfig, setFormConfig] = useState<ApiTeacherFormConfig>({
     sections: [],
   });
@@ -196,8 +286,20 @@ export function TeacherFormDrawer({
 
   useEffect(() => {
     if (!open) return;
+    resumeFileRef.current = null;
     if (mode === "edit" && teacher) {
-      form.reset(teacherToFormValues(teacher));
+      const values = teacherToFormValues(teacher);
+      const employed = employedValueFromSalary(
+        values.currentSalary,
+        values.customFields
+      );
+      form.reset({
+        ...values,
+        customFields: {
+          ...values.customFields,
+          [EMPLOYED_FIELD_KEY]: employed,
+        },
+      });
       return;
     }
     if (mode === "add") {
@@ -227,31 +329,55 @@ export function TeacherFormDrawer({
         return;
       }
       setFormConfig(formResult.data);
-      const hasWork = formResult.data.sections.some((s) =>
-        s.fields.some((f) => f.type === "work_experience")
-      );
+      const hasWork =
+        configHasWorkExperienceRows(formResult.data) ||
+        formResult.data.sections.some((s) =>
+          s.fields.some((f) => f.type === "work_experience")
+        );
       if (hasWork && form.getValues("workHistory").length === 0) {
-        const roleField = formResult.data.sections
-          .flatMap((s) => s.fields)
-          .find((f) => f.key === "teacher_roles" || f.key === "roles");
-        form.setValue("workHistory", [
-          defaultWork(roleField?.options?.[0] ?? options.bySlug["teacher-roles"]?.[0] ?? ""),
-        ]);
+        form.setValue("workHistory", [defaultWorkEntry()]);
       }
+      migrateMultiselectCustomFields(form);
     });
   }, [open, form]);
 
+  useEffect(() => {
+    if (!open) return;
+    migrateMultiselectCustomFields(form);
+  }, [open, form]);
+
+  const selectedCountry = useWatch({ control: form.control, name: "country" });
   const selectedState = useWatch({ control: form.control, name: "state" });
 
   useEffect(() => {
-    if (!open || !selectedState?.trim()) return;
-    const cities = formOptions.citiesByState[selectedState];
-    if (!cities?.length) return;
+    if (!open || !selectedCountry?.trim()) return;
+    const states = getStateNamesForCountry(selectedCountry);
+    if (!states.length) return;
+    const currentState = form.getValues("state");
+    if (!currentState || !states.includes(currentState)) {
+      const nextState = states[0]!;
+      form.setValue("state", nextState);
+      form.setValue("city", getDefaultCityForState(selectedCountry, nextState));
+    }
+  }, [open, selectedCountry, form]);
+
+  useEffect(() => {
+    if (!open || !selectedCountry?.trim() || !selectedState?.trim()) return;
+    const cities = getCityNamesForState(selectedCountry, selectedState);
+    if (!cities.length) {
+      const fallback = formOptions.citiesByState[selectedState];
+      if (!fallback?.length) return;
+      const currentCity = form.getValues("city");
+      if (!currentCity || !fallback.includes(currentCity)) {
+        form.setValue("city", fallback[0]!);
+      }
+      return;
+    }
     const currentCity = form.getValues("city");
     if (!currentCity || !cities.includes(currentCity)) {
       form.setValue("city", cities[0]!);
     }
-  }, [open, selectedState, formOptions, form]);
+  }, [open, selectedCountry, selectedState, formOptions, form]);
 
   const isDirty = form.formState.isDirty;
   const resumeFileName = useWatch({
@@ -278,14 +404,73 @@ export function TeacherFormDrawer({
     onOpenChange(next);
   };
 
-  const handleResumeSelected = async (file: File | null) => {
+  const attachResumeFile = (file: File) => {
     resumeFileRef.current = file;
-    if (!file) return;
+    form.setValue("resumeFileName", file.name, { shouldDirty: true });
+    form.setValue("resumeMime", file.type || "application/octet-stream", {
+      shouldDirty: true,
+    });
+  };
 
+  const clearResumeAttachment = () => {
+    resumeFileRef.current = null;
+    form.setValue("resumeFileName", null, { shouldDirty: true });
+    form.setValue("resumeMime", null, { shouldDirty: true });
+  };
+
+  const handleResumeUpload = async (file: File) => {
+    attachResumeFile(file);
+    const token = useAuthStore.getState().accessToken;
+
+    if (mode === "edit" && teacher && token) {
+      setUploadingResume(true);
+      try {
+        const values = sanitizeTeacherFormValues(form.getValues());
+        const api = await updateTeacherRequest(
+          token,
+          teacher.id,
+          values,
+          file
+        );
+        if (!api.ok) {
+          toast.error("Could not upload resume", { description: api.message });
+          return;
+        }
+        const saved = applyCreatedTeacherFromApi(
+          api.data,
+          toTeacher(values, teachers, teacher)
+        );
+        if (saved.resumeFileName) {
+          form.setValue("resumeFileName", saved.resumeFileName, {
+            shouldDirty: false,
+          });
+        }
+        resumeFileRef.current = null;
+        onSave(saved);
+        toast.success("Resume uploaded", {
+          description: saved.resumeFileName ?? file.name,
+        });
+      } finally {
+        setUploadingResume(false);
+      }
+      return;
+    }
+
+    toast.success("Resume attached", {
+      description:
+        mode === "add"
+          ? "Save the teacher to upload the file to the server."
+          : token
+            ? "Save the profile to upload the file."
+            : "Sign in and save to upload the file.",
+    });
+  };
+
+  const runAiResumeParse = async (file: File) => {
     const token = useAuthStore.getState().accessToken;
     if (!token) {
-      toast.message("Resume attached", {
-        description: "Sign in to auto-fill fields from the resume.",
+      toast.message("Sign in required", {
+        description: "Sign in to use AI resume parsing.",
       });
       return;
     }
@@ -294,50 +479,86 @@ export function TeacherFormDrawer({
     try {
       const result = await parseResumeRequest(token, file);
       if (!result.ok) {
-        toast.error("Could not read resume", { description: result.message });
+        toast.error("Could not parse resume", { description: result.message });
         return;
       }
 
       const patch = parsedResumeToFormPatch(result.data);
       const keys = Object.keys(patch) as (keyof TeacherFormValues)[];
       if (keys.length === 0) {
-        toast.message("Resume attached", {
-          description: "No profile fields were extracted.",
+        toast.message("No fields extracted", {
+          description: "Try another resume or fill the form manually.",
         });
         return;
       }
 
-      for (const key of keys) {
-        const value = patch[key];
-        if (value !== undefined) {
-          form.setValue(key, value as TeacherFormValues[typeof key], {
-            shouldDirty: true,
-          });
-        }
-      }
+      const current = form.getValues();
+      form.reset(
+        {
+          ...current,
+          ...patch,
+          customFields: {
+            ...current.customFields,
+            ...patch.customFields,
+          },
+        },
+        { keepDirty: true, keepDefaultValues: false }
+      );
 
-      toast.success("Form updated from resume", {
-        description: `${keys.length} field${keys.length === 1 ? "" : "s"} filled.`,
+      const workCount = patch.workHistory?.length ?? 0;
+      toast.success("AI filled the form", {
+        description:
+          workCount > 0
+            ? `${keys.length} field${keys.length === 1 ? "" : "s"} · ${workCount} work row${workCount === 1 ? "" : "s"} — review before saving.`
+            : `${keys.length} field${keys.length === 1 ? "" : "s"} filled.`,
       });
     } finally {
       setParsingResume(false);
     }
   };
 
-  const applyLayoutValidation = (values: TeacherFormValues): boolean => {
-    const errs = validateDynamicTeacherForm(values, formConfig);
-    setLayoutErrors(errs);
-    if (Object.keys(errs).length > 0) {
-      toast.error("Form incomplete", {
-        description: "Fix the fields marked in red (scroll up if needed).",
+  const handleAiParse = async (file: File) => {
+    attachResumeFile(file);
+    await runAiResumeParse(file);
+  };
+
+  const handleAiParseStored = async () => {
+    const file = resumeFileRef.current;
+    if (!file) {
+      toast.message("No resume file", {
+        description: "Upload a resume first, or pick a file for AI parse.",
       });
+      return;
+    }
+    await runAiResumeParse(file);
+  };
+
+  const mergeValidationErrors = (
+    values: TeacherFormValues
+  ): Record<string, string> => {
+    const layoutErrs = validateDynamicTeacherForm(values, formConfig);
+    const zodErrs = flattenFormFieldErrors(form.formState.errors);
+    return { ...zodErrs, ...layoutErrs };
+  };
+
+  const showValidationFailure = (errs: Record<string, string>) => {
+    setLayoutErrors(errs);
+    toast.error("Form incomplete", {
+      description: formatValidationMessages(errs),
+    });
+  };
+
+  const applyLayoutValidation = (values: TeacherFormValues): boolean => {
+    const errs = mergeValidationErrors(values);
+    if (Object.keys(errs).length > 0) {
+      showValidationFailure(errs);
       return false;
     }
     return true;
   };
 
   const runEditSave = async () => {
-    const values = form.getValues();
+    const values = sanitizeTeacherFormValues(form.getValues());
     if (!applyLayoutValidation(values)) return;
     setSaving(true);
     try {
@@ -385,7 +606,8 @@ export function TeacherFormDrawer({
   };
 
   const submitAdd = form.handleSubmit(
-    async (values) => {
+    async (rawValues) => {
+      const values = sanitizeTeacherFormValues(rawValues);
       if (!applyLayoutValidation(values)) return;
       setSaving(true);
       try {
@@ -430,11 +652,11 @@ export function TeacherFormDrawer({
         setSaving(false);
       }
     },
-    () => {
-      void form.trigger();
-      toast.error("Form incomplete", {
-        description: "Fix the fields marked in red (scroll up if needed).",
-      });
+    async () => {
+      const values = form.getValues();
+      await form.trigger();
+      const errs = mergeValidationErrors(values);
+      showValidationFailure(errs);
     }
   );
 
@@ -447,74 +669,114 @@ export function TeacherFormDrawer({
     submitAdd(e);
   };
 
+  const title = mode === "add" ? "Add teacher" : "Edit teacher";
+
+  const formBody = (
+    <Form {...form}>
+      <div
+        className={
+          isPage
+            ? "flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-start sm:justify-between"
+            : "flex flex-col gap-4 border-b pb-4 pr-12 sm:flex-row sm:items-start sm:justify-between"
+        }
+      >
+        {isPage ? (
+          <div className="flex-1 space-y-1.5">
+            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+            <p className="text-sm text-muted-foreground">
+              Complete the profile below. Upload a resume to store the file, or
+              use AI parse to autofill fields.
+            </p>
+          </div>
+        ) : (
+          <SheetHeader className="flex-1 space-y-1.5 p-0 text-left">
+            <SheetTitle>{title}</SheetTitle>
+          </SheetHeader>
+        )}
+        <TeacherResumeActions
+          fileName={resumeFileName ?? null}
+          disabled={saving}
+          uploadingResume={uploadingResume}
+          parsingResume={parsingResume}
+          onResumeUpload={handleResumeUpload}
+          onAiParse={handleAiParse}
+          onAiParseStored={handleAiParseStored}
+          onClear={clearResumeAttachment}
+        />
+      </div>
+      <form
+        className={
+          isPage
+            ? "flex flex-col gap-6 pb-8"
+            : "flex flex-1 flex-col gap-6 py-2"
+        }
+        onSubmit={handleFormSubmit}
+      >
+        {loadingFormConfig ? (
+          <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Loading form…
+          </div>
+        ) : (
+          <TeacherFormDynamicSections
+            config={formConfig}
+            form={form}
+            formOptions={formOptions}
+            layoutErrors={layoutErrors}
+            isEditMode={mode === "edit"}
+          />
+        )}
+
+        {isPage ? (
+          <div className="flex flex-col-reverse gap-2 border-t pt-6 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => requestClose(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving || loadingFormConfig}>
+              {saving
+                ? "Saving…"
+                : mode === "add"
+                  ? "Create teacher"
+                  : "Save changes"}
+            </Button>
+          </div>
+        ) : (
+          <SheetFooter className="sticky bottom-0 mt-auto border-t bg-background/95 py-4 backdrop-blur">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => requestClose(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving || loadingFormConfig}>
+              {saving
+                ? "Saving…"
+                : mode === "add"
+                  ? "Create teacher"
+                  : "Save changes"}
+            </Button>
+          </SheetFooter>
+        )}
+      </form>
+    </Form>
+  );
+
   return (
     <>
-      <Sheet open={open} onOpenChange={requestClose}>
-        <SheetContent className="flex w-full flex-col overflow-y-auto sm:max-w-xl md:max-w-2xl">
-          <Form {...form}>
-            <div className="flex flex-col gap-4 border-b pb-4 pr-12 sm:flex-row sm:items-start sm:justify-between">
-              <SheetHeader className="flex-1 space-y-1.5 p-0 text-left">
-                <SheetTitle>
-                  {mode === "add" ? "Add teacher" : "Edit teacher"}
-                </SheetTitle>
-             
-              </SheetHeader>
-              <ResumeQuickUpload
-                fileName={resumeFileName ?? null}
-                disabled={saving}
-                parsing={parsingResume}
-                onFileSelected={handleResumeSelected}
-                onChange={(next) => {
-                  form.setValue("resumeFileName", next.fileName, {
-                    shouldDirty: true,
-                  });
-                  form.setValue("resumeMime", next.mime, {
-                    shouldDirty: true,
-                  });
-                  if (!next.fileName) {
-                    resumeFileRef.current = null;
-                  }
-                }}
-              />
-            </div>
-            <form
-              className="flex flex-1 flex-col gap-6 py-2"
-              onSubmit={handleFormSubmit}
-            >
-              {loadingFormConfig ? (
-                <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Loading form…
-                </div>
-              ) : (
-                <TeacherFormDynamicSections
-                  config={formConfig}
-                  form={form}
-                  formOptions={formOptions}
-                  layoutErrors={layoutErrors}
-                />
-              )}
-
-              <SheetFooter className="sticky bottom-0 mt-auto border-t bg-background/95 py-4 backdrop-blur">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => requestClose(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={saving || loadingFormConfig}>
-                  {saving
-                    ? "Saving…"
-                    : mode === "add"
-                      ? "Create teacher"
-                      : "Save changes"}
-                </Button>
-              </SheetFooter>
-            </form>
-          </Form>
-        </SheetContent>
-      </Sheet>
+      {isPage ? (
+        <div className="mx-auto w-full">{formBody}</div>
+      ) : (
+        <Sheet open={open} onOpenChange={requestClose}>
+          <SheetContent className="flex w-full flex-col overflow-y-auto sm:max-w-xl md:max-w-2xl">
+            {formBody}
+          </SheetContent>
+        </Sheet>
+      )}
 
       <ConfirmDialog
         open={confirmClose}

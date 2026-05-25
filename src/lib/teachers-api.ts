@@ -1,10 +1,33 @@
 import type { TeacherFormValues } from "@/lib/validations/teacher-form";
+import { appendTeacherListSearchParams } from "@/lib/teacher-list-search-params";
+import {
+  formatMultiselectStoredValue,
+  mergeApiStringArrays,
+  parseApiStringArray,
+  parseMultiselectStoredValue,
+  serializeApiStringArray,
+} from "@/lib/multiselect-form-value";
 import type { TeacherFilters } from "@/store/filter-store";
 import type { Teacher, TeacherStatus, TeacherWorkExperience } from "@/types/teacher";
 
 import { getApiBase } from "@/lib/api-config";
+import { resolveResumeUrlFromApiRow } from "@/lib/teacher-resume";
+import {
+  sanitizeApiStringArray,
+  sanitizeApiText,
+} from "@/lib/sanitize-api-values";
+
+export { sanitizeApiText, sanitizeTeacherFormValues } from "@/lib/sanitize-api-values";
 
 const API_BASE = getApiBase();
+
+function resolveSubjectsTaught(values: TeacherFormValues): string[] {
+  return mergeApiStringArrays(
+    parseMultiselectStoredValue(values.subject),
+    values.customFields?.subjects_taught,
+    values.customFields?.subject_taught
+  );
+}
 
 /** Normalize HTML date (YYYY-MM-DD) to ISO for APIs / ORMs that expect full timestamps. */
 function toIsoDateOrNull(value: string | null | undefined): string | null {
@@ -20,21 +43,18 @@ function toIsoOrPassThrough(value: string): string {
   return d.toISOString();
 }
 
-/** One employment row — snake_case (Postman / many DTOs). */
+/** Work history row only — no per-job experience/salary (use top-level columns). */
 function workExperienceSnake(
   w: TeacherFormValues["workHistory"][number]
 ): Record<string, unknown> {
   const from = toIsoOrPassThrough(w.from);
   const to = w.currentlyWorking ? null : toIsoDateOrNull(w.to ?? null);
   return {
-    school_name: w.schoolName,
-    role: w.role,
+    school_name: sanitizeApiText(w.schoolName),
+    role: sanitizeApiText(w.role),
     from,
     to,
     currently_working: w.currentlyWorking,
-    // Aliases some backends / DB mappers expect
-    duration_from: from,
-    duration_to: to,
   };
 }
 
@@ -45,14 +65,11 @@ function workExperienceCamel(
   const from = toIsoOrPassThrough(w.from);
   const to = w.currentlyWorking ? null : toIsoDateOrNull(w.to ?? null);
   return {
-    schoolName: w.schoolName,
-    organizationName: w.schoolName,
-    role: w.role,
+    schoolName: sanitizeApiText(w.schoolName),
+    role: sanitizeApiText(w.role),
     from,
     to,
     currentlyWorking: w.currentlyWorking,
-    durationFrom: from,
-    durationTo: to,
   };
 }
 
@@ -63,40 +80,127 @@ export function buildTeacherApiPayload(
   const workSnake = values.workHistory.map(workExperienceSnake);
   const workCamel = values.workHistory.map(workExperienceCamel);
 
+  const teacherRoles = resolveTeacherRoles(values);
+  const subjectsTaught = resolveSubjectsTaught(values);
+  const areaOfInterest = mergeApiStringArrays(
+    parseMultiselectStoredValue(values.areaOfInterest),
+    values.customFields?.area_of_interest
+  );
+  const skills = mergeApiStringArrays(values.skills, values.customFields?.skills);
+  const experienceYears = Number(values.experienceYears) || 0;
+  const currentSalary = Number(values.currentSalary) || 0;
+
   return {
-    name: values.name,
-    mobile: values.mobile,
-    email: values.email,
-    state: values.state,
-    city: values.city,
-    address: values.address,
-    subject_taught: values.subject,
-    boards_taught: values.boards,
-    grades_taught: values.grades,
-    teacher_roles: values.roles,
-    skills:
-      values.skills && values.skills.length > 0 ? values.skills : [],
+    name: sanitizeApiText(values.name),
+    mobile: sanitizeApiText(values.mobile),
+    email: sanitizeApiText(values.email),
+    country: sanitizeApiText(values.country) || "India",
+    state: sanitizeApiText(values.state),
+    city: sanitizeApiText(values.city),
+    address: sanitizeApiText(values.address),
+    subject_taught: formatMultiselectStoredValue(subjectsTaught),
+    subjects_taught: subjectsTaught,
+    boards_taught: sanitizeApiStringArray(values.boards),
+    grades_taught: sanitizeApiStringArray(values.grades),
+    teacher_roles: sanitizeApiStringArray(teacherRoles),
+    skills: sanitizeApiStringArray(skills),
+    reason_to_join: sanitizeApiStringArray(
+      customFieldArray(values, "reason_to_join")
+    ),
+    where_did_you_hear_about_us: sanitizeApiStringArray(
+      customFieldArray(values, "where_did_you_hear_about_us")
+    ),
     work_experience: workSnake,
     workExperience: workCamel,
     /** Prisma-style nested create (many Nest services forward this to prisma.*.create) */
     work_experiences: { create: workSnake },
     workExperiences: { create: workCamel },
-    ug_college: values.ugCollege,
-    pg_university: values.pgUniversity,
-    qualification: values.qualification,
-    certifications: values.certifications ?? "",
+    ug_college: sanitizeApiText(values.ugCollege),
+    pg_university: sanitizeApiText(values.pgUniversity),
+    qualification: sanitizeApiText(values.qualification),
+    certifications: sanitizeApiText(String(values.certifications ?? "")),
     additional_education: (values.extraEducation ?? [])
-      .map((e) => e.value.trim())
+      .map((e) => sanitizeApiText(e.value))
       .filter(Boolean),
-    current_location: values.currentLocation,
-    preferred_location: values.preferredLocation,
-    area_of_interest: values.areaOfInterest,
-    current_salary: values.currentSalary,
-    total_experience: values.experienceYears,
-    internal_notes: values.notes ?? "",
-    status: values.status,
-    custom_fields: values.customFields ?? {},
+    current_location: sanitizeApiText(values.currentLocation),
+    preferred_location: sanitizeApiText(values.preferredLocation),
+    area_of_interest: sanitizeApiStringArray(areaOfInterest),
+    current_salary: currentSalary,
+    total_experience: experienceYears,
+    experience_years: experienceYears,
+    internal_notes: sanitizeApiText(values.notes ?? ""),
+    status: values.status ?? "active",
+    custom_fields: buildCustomFieldsPayload(values),
   };
+}
+
+function appendTeacherPayloadToFormData(
+  formData: FormData,
+  p: Record<string, unknown>
+): void {
+  formData.append("name", String(p.name).trim());
+  formData.append("mobile", String(p.mobile).trim());
+  formData.append("email", String(p.email).trim());
+  formData.append("country", String(p.country ?? ""));
+  formData.append("state", String(p.state));
+  formData.append("city", String(p.city));
+  formData.append("address", String(p.address));
+  formData.append("subject_taught", String(p.subject_taught ?? ""));
+  formData.append(
+    "subjects_taught",
+    serializeApiStringArray(parseApiStringArray(p.subjects_taught))
+  );
+  formData.append(
+    "boards_taught",
+    serializeApiStringArray(parseApiStringArray(p.boards_taught))
+  );
+  formData.append(
+    "grades_taught",
+    serializeApiStringArray(parseApiStringArray(p.grades_taught))
+  );
+  formData.append(
+    "teacher_roles",
+    serializeApiStringArray(parseApiStringArray(p.teacher_roles))
+  );
+  formData.append(
+    "skills",
+    serializeApiStringArray(parseApiStringArray(p.skills))
+  );
+  formData.append(
+    "reason_to_join",
+    serializeApiStringArray(parseApiStringArray(p.reason_to_join))
+  );
+  formData.append(
+    "where_did_you_hear_about_us",
+    serializeApiStringArray(parseApiStringArray(p.where_did_you_hear_about_us))
+  );
+  formData.append(
+    "area_of_interest",
+    serializeApiStringArray(parseApiStringArray(p.area_of_interest))
+  );
+  formData.append("work_experience", JSON.stringify(p.work_experience));
+  formData.append("ug_college", String(p.ug_college));
+  formData.append("pg_university", String(p.pg_university));
+  formData.append("qualification", String(p.qualification));
+  formData.append("certifications", String(p.certifications));
+  formData.append(
+    "additional_education",
+    JSON.stringify(p.additional_education ?? [])
+  );
+  formData.append("current_location", String(p.current_location));
+  formData.append("preferred_location", String(p.preferred_location));
+  formData.append("current_salary", String(p.current_salary ?? 0));
+  formData.append("total_experience", String(p.total_experience ?? 0));
+  formData.append(
+    "experience_years",
+    String(p.experience_years ?? p.total_experience ?? 0)
+  );
+  formData.append("internal_notes", String(p.internal_notes ?? ""));
+  formData.append("status", String(p.status ?? "active"));
+  formData.append(
+    "custom_fields",
+    JSON.stringify(p.custom_fields ?? {})
+  );
 }
 
 /** Multipart field `teacher` — JSON string */
@@ -167,8 +271,57 @@ function extractTeachersPayload(data: unknown): {
 }
 
 function asStrArr(v: unknown): string[] {
-  if (!Array.isArray(v)) return [];
-  return v.filter((x): x is string => typeof x === "string");
+  return parseApiStringArray(v);
+}
+
+function resolveTeacherRoles(values: TeacherFormValues): string[] {
+  const cf = values.customFields ?? {};
+  return mergeApiStringArrays(values.roles, cf.role, cf.teacher_roles);
+}
+
+function customFieldArray(
+  values: TeacherFormValues,
+  apiKey: string
+): string[] {
+  return parseApiStringArray(values.customFields?.[apiKey]);
+}
+
+/** Omit custom field keys already sent as top-level API columns. */
+function buildCustomFieldsPayload(
+  values: TeacherFormValues
+): Record<string, unknown> {
+  const cf: Record<string, unknown> = { ...(values.customFields ?? {}) };
+  const lifted = [
+    "role",
+    "teacher_roles",
+    "reason_to_join",
+    "where_did_you_hear_about_us",
+    "area_of_interest",
+    "subject_taught",
+    "subjects_taught",
+    "certifications",
+    "boards_taught",
+    "grades_taught",
+    "skills",
+    "salary",
+    "total_years_experience",
+  ];
+  for (const key of lifted) {
+    delete cf[key];
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, raw] of Object.entries(cf)) {
+    if (Array.isArray(raw)) {
+      const arr = sanitizeApiStringArray(raw.map(String));
+      if (arr.length) out[key] = arr;
+    } else if (typeof raw === "boolean" || typeof raw === "number") {
+      out[key] = raw;
+    } else {
+      const text = sanitizeApiText(String(raw));
+      if (text) out[key] = text;
+    }
+  }
+  return out;
 }
 
 function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
@@ -219,14 +372,21 @@ function parseCustomFields(
 }
 
 function resumeFileLabel(r: Record<string, unknown>): string | null {
-  const fn = pickStr(
+  const orig = pickStr(
     r,
+    "resume_original_name",
+    "resumeOriginalName",
     "resume_file_name",
     "resumeFileName",
     "resume_filename",
     "resumeFilename"
   );
-  if (fn) return fn;
+  if (orig) return orig;
+  const path = pickStr(r, "resume_path", "resumePath");
+  if (path) {
+    const last = path.split("/").filter(Boolean).pop();
+    if (last) return decodeURIComponent(last);
+  }
   const url = pickStr(r, "resume_url", "resumeUrl", "resume");
   if (!url) return null;
   try {
@@ -251,14 +411,25 @@ function mapWorkExpItem(
     "school_name",
     "schoolName",
     "school",
-    "organization"
+    "organization",
+    "organization_name",
+    "company",
+    "employer",
+    "workplace"
   );
-  const role = pickStr(w, "role", "current_role");
+  const role = pickStr(
+    w,
+    "role",
+    "current_role",
+    "title",
+    "position",
+    "job_title"
+  );
   if (!school && !role) return null;
   return {
     id: pickStr(w, "id") || `w-${i}-${Math.random().toString(36).slice(2, 8)}`,
-    schoolName: school || "—",
-    role: role || "—",
+    schoolName: school,
+    role: role,
     from:
       pickStr(w, "from", "from_date", "start_date") ||
       new Date().toISOString().slice(0, 10),
@@ -283,6 +454,7 @@ export function mapApiRowToTeacher(row: unknown): Teacher | null {
   const r = row as Record<string, unknown>;
   const idRaw = r.id ?? r.teacher_id;
   if (idRaw == null || String(idRaw).length === 0) return null;
+  const teacherCode = pickStr(r, "teacher_id", "teacherId");
 
   const workRaw = r.work_experience ?? r.workExperience ?? r.work_history;
   let workHistory: TeacherWorkExperience[] = [];
@@ -298,32 +470,41 @@ export function mapApiRowToTeacher(row: unknown): Teacher | null {
 
   return {
     id: String(idRaw),
-    name: pickStr(r, "name", "full_name", "fullName") || "Unknown",
-    email: pickStr(r, "email") || "—",
-    mobile: pickStr(r, "mobile", "phone") || "—",
-    city: pickStr(r, "city") || "—",
-    state: pickStr(r, "state") || "—",
-    address: pickStr(r, "address") || "—",
-    ugCollege: pickStr(r, "ug_college", "ugCollege", "college_attended_ug") || "—",
-    pgUniversity: pickStr(r, "pg_university", "pgUniversity") || "—",
+    teacherCode: teacherCode || null,
+    name: pickStr(r, "name", "full_name", "fullName") || "",
+    email: pickStr(r, "email") || "",
+    mobile: pickStr(r, "mobile", "phone") || "",
+    city: pickStr(r, "city") || "",
+    state: pickStr(r, "state") || "",
+    country: pickStr(r, "country") || "India",
+    address: pickStr(r, "address") || "",
+    ugCollege:
+      pickStr(r, "ug_college", "ugCollege", "college_attended_ug") || "",
+    pgUniversity: pickStr(r, "pg_university", "pgUniversity") || "",
     qualification:
-      pickStr(r, "qualification", "educational_qualifications") || "—",
+      pickStr(r, "qualification", "educational_qualifications") || "",
     certifications: pickStr(r, "certifications") || "",
     extraEducation: asStrArr(
       r.additional_education ?? r.education_extras ?? r.extra_education
     ),
-    subject: pickStr(r, "subject", "subject_taught") || "—",
-    boards: asStrArr(r.boards_taught ?? r.boards),
-    grades: asStrArr(r.grades_taught ?? r.grades),
-    roles: asStrArr(r.teacher_roles ?? r.roles),
+    subject:
+      mergeApiStringArrays(
+        r.subjects_taught,
+        r.subject_taught,
+        r.subject
+      ).join(", ") || "",
+    boards: mergeApiStringArrays(r.boards_taught, r.boards),
+    grades: mergeApiStringArrays(r.grades_taught, r.grades),
+    roles: mergeApiStringArrays(r.teacher_roles, r.roles),
     currentLocation:
       pickStr(r, "current_location", "currentLocation") ||
       pickStr(r, "city") ||
-      "—",
+      "",
     preferredLocation:
-      pickStr(r, "preferred_location", "preferredLocation") || "—",
+      pickStr(r, "preferred_location", "preferredLocation") || "",
     areaOfInterest:
-      pickStr(r, "area_of_interest", "areaOfInterest") || "—",
+      mergeApiStringArrays(r.area_of_interest, r.areaOfInterest).join(", ") ||
+      "",
     currentSalary: asNum(r.current_salary ?? r.currentSalary, 0),
     experienceYears: asNum(
       r.total_experience ??
@@ -339,19 +520,32 @@ export function mapApiRowToTeacher(row: unknown): Teacher | null {
               id: `w-placeholder-${String(idRaw)}`,
               schoolName:
                 pickStr(r, "current_school", "school_name", "organization") ||
-                "—",
-              role: pickStr(r, "current_role", "role") || "—",
+                "",
+              role: pickStr(r, "current_role", "role") || "",
               from: new Date().toISOString().slice(0, 10),
               to: null,
               currentlyWorking: true,
             },
           ],
     resumeFileName: resumeFileLabel(r),
+    resumeUrl: resolveResumeUrlFromApiRow(r),
     resumeMime: null,
     notes: pickStr(r, "internal_notes", "notes") || "",
     status,
-    skills: asStrArr(r.skills),
-    customFields: parseCustomFields(r.custom_fields ?? r.customFields),
+    skills: mergeApiStringArrays(r.skills),
+    customFields: {
+      ...parseCustomFields(r.custom_fields ?? r.customFields),
+      ...(mergeApiStringArrays(r.reason_to_join).length
+        ? { reason_to_join: mergeApiStringArrays(r.reason_to_join) }
+        : {}),
+      ...(mergeApiStringArrays(r.where_did_you_hear_about_us).length
+        ? {
+            where_did_you_hear_about_us: mergeApiStringArrays(
+              r.where_did_you_hear_about_us
+            ),
+          }
+        : {}),
+    },
     createdAt:
       pickStr(r, "created_at", "createdAt", "created") ||
       new Date().toISOString(),
@@ -362,16 +556,27 @@ export type ListTeachersResult =
   | { ok: true; teachers: Teacher[]; total: number; page: number; limit: number }
   | { ok: false; message: string };
 
+function appendListFilterParams(
+  params: URLSearchParams,
+  filters: TeacherFilters
+): void {
+  appendTeacherListSearchParams(params, filters);
+}
+
 /** GET /api/teachers?page=&limit= */
 export async function listTeachersRequest(
   accessToken: string,
   page: number,
-  limit: number
+  limit: number,
+  filters?: TeacherFilters
 ): Promise<ListTeachersResult> {
   const params = new URLSearchParams({
     page: String(page),
     limit: String(limit),
   });
+  if (filters) {
+    appendListFilterParams(params, filters);
+  }
   let res: Response;
   try {
     res = await fetch(`${API_BASE}/api/teachers?${params}`, {
@@ -500,6 +705,7 @@ export async function createTeacherRequest(
       formData.append("work_experience", JSON.stringify(workSnake));
       formData.append("workExperience", JSON.stringify(workCamel));
       formData.append("resume", resumeFile, resumeFile.name);
+      formData.append("resume_original_name", resumeFile.name);
       res = await fetch(`${API_BASE}/api/teachers`, {
         method: "POST",
         headers: {
@@ -546,33 +752,11 @@ export async function updateTeacherRequest(
 ): Promise<UpdateTeacherResult> {
   const p = buildTeacherApiPayload(values);
   const formData = new FormData();
-
-  formData.append("name", String(p.name).trim());
-  formData.append("mobile", String(p.mobile).trim());
-  formData.append("email", String(p.email).trim());
-  formData.append("state", String(p.state));
-  formData.append("city", String(p.city));
-  formData.append("address", String(p.address));
-  formData.append("subject_taught", String(p.subject_taught));
-  formData.append("boards_taught", JSON.stringify(p.boards_taught));
-  formData.append("grades_taught", JSON.stringify(p.grades_taught));
-  formData.append("teacher_roles", JSON.stringify(p.teacher_roles));
-  formData.append("skills", JSON.stringify(p.skills));
-  formData.append("work_experience", JSON.stringify(p.work_experience));
-  formData.append("ug_college", String(p.ug_college));
-  formData.append("pg_university", String(p.pg_university));
-  formData.append("qualification", String(p.qualification));
-  formData.append("certifications", String(p.certifications));
-  formData.append("current_location", String(p.current_location));
-  formData.append("preferred_location", String(p.preferred_location));
-  formData.append("area_of_interest", String(p.area_of_interest));
-  formData.append("current_salary", String(p.current_salary));
-  formData.append("total_experience", String(p.total_experience));
-  formData.append("internal_notes", String(p.internal_notes));
-  formData.append("status", String(p.status));
+  appendTeacherPayloadToFormData(formData, p);
 
   if (resumeFile) {
     formData.append("resume", resumeFile, resumeFile.name);
+    formData.append("resume_original_name", resumeFile.name);
   }
 
   let res: Response;
@@ -709,17 +893,7 @@ function appendExportFilterParams(
   params: URLSearchParams,
   filters: TeacherFilters
 ): void {
-  const q = filters.search?.trim();
-  if (q) params.set("q", q);
-  for (const c of filters.cities) params.append("city", c);
-  for (const s of filters.status) params.append("status", s);
-  for (const s of filters.subjects) params.append("subject", s);
-  for (const r of filters.roles) params.append("role", r);
-  for (const g of filters.grades) params.append("grade", g);
-  for (const b of filters.boards) params.append("board", b);
-  for (const s of filters.states) params.append("state", s);
-  for (const e of filters.experience) params.append("experience", e);
-  for (const sk of filters.skills) params.append("skill", sk);
+  appendTeacherListSearchParams(params, filters);
 }
 
 function filenameFromContentDisposition(header: string | null): string | null {
@@ -1047,13 +1221,9 @@ export async function importTeachersFileRequest(
   return { ok: true, data, message: importSuccessMessage(data) };
 }
 
-/** Merge API response id (if any) into locally built teacher row. */
-export function applyCreatedTeacherFromApi(
-  apiBody: unknown,
-  local: Teacher
-): Teacher {
+function extractTeacherRowFromApiBody(apiBody: unknown): Record<string, unknown> | null {
   if (!apiBody || typeof apiBody !== "object" || Array.isArray(apiBody)) {
-    return local;
+    return null;
   }
   const root = apiBody as Record<string, unknown>;
   const row =
@@ -1066,8 +1236,29 @@ export function applyCreatedTeacherFromApi(
     !Array.isArray(row.teacher)
       ? (row.teacher as Record<string, unknown>)
       : row;
+  return teacher;
+}
 
-  const idRaw = teacher.id ?? row.id ?? root.id;
+/** Merge API response (id, resume path, etc.) into locally built teacher row. */
+export function applyCreatedTeacherFromApi(
+  apiBody: unknown,
+  local: Teacher
+): Teacher {
+  const teacherRow = extractTeacherRowFromApiBody(apiBody);
+  if (!teacherRow) return local;
+
+  const mapped = mapApiRowToTeacher(teacherRow);
+  if (mapped) {
+    return {
+      ...local,
+      ...mapped,
+      id: mapped.id || local.id,
+      createdAt: local.createdAt || mapped.createdAt,
+      customFields: { ...local.customFields, ...mapped.customFields },
+    };
+  }
+
+  const idRaw = teacherRow.id;
   if (idRaw != null && String(idRaw).length > 0) {
     return { ...local, id: String(idRaw) };
   }

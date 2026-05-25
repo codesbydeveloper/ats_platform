@@ -3,13 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Loader2, Pencil } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/shared/page-header";
 import { TeacherProfileView } from "@/components/teachers/teacher-profile-view";
-import { TeacherFormDrawer } from "@/components/teachers/teacher-form-drawer";
 import { Button } from "@/components/ui/button";
+import { matchTeacherRouteId, teacherEditPath } from "@/lib/teacher-routes";
 import {
   downloadTeacherResumeRequest,
   getTeacherRequest,
@@ -24,12 +24,9 @@ export default function TeacherProfilePage() {
 
   const accessToken = useAuthStore((s) => s.accessToken);
   const teachers = useTeacherStore((s) => s.teachers);
-  const updateTeacher = useTeacherStore((s) => s.updateTeacher);
-
   const [teacher, setTeacher] = useState<Teacher | null>(null);
   const [loading, setLoading] = useState(true);
   const [resumeDownloading, setResumeDownloading] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
   const fetchSeq = useRef(0);
 
   useEffect(() => {
@@ -38,7 +35,8 @@ export default function TeacherProfilePage() {
       return;
     }
 
-    const fromStore = teachers.find((t) => t.id === id) ?? null;
+    const fromStore =
+      teachers.find((t) => matchTeacherRouteId(t, id)) ?? null;
     if (fromStore) setTeacher(fromStore);
 
     if (!accessToken) {
@@ -102,15 +100,8 @@ export default function TeacherProfilePage() {
         description="Full read-only profile with all saved fields."
       >
         {teacher ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => setFormOpen(true)}
-          >
-            <Pencil className="h-4 w-4" />
-            Edit
+          <Button variant="outline" size="sm" className="gap-1.5" asChild>
+            <Link href={teacherEditPath(teacher)}>Edit teacher</Link>
           </Button>
         ) : null}
       </PageHeader>
@@ -152,26 +143,6 @@ export default function TeacherProfilePage() {
         />
       ) : null}
 
-      {teacher ? (
-        <TeacherFormDrawer
-          key={teacher.id}
-          open={formOpen}
-          onOpenChange={setFormOpen}
-          mode="edit"
-          teacher={teacher}
-          teachers={teachers}
-          onSave={(saved) => {
-            updateTeacher(saved.id, saved);
-            setTeacher(saved);
-            setFormOpen(false);
-            if (accessToken) {
-              void getTeacherRequest(accessToken, saved.id).then((r) => {
-                if (r.ok) setTeacher(r.teacher);
-              });
-            }
-          }}
-        />
-      ) : null}
     </div>
   );
 }

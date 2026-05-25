@@ -44,6 +44,7 @@ import {
   type LookupFieldOption,
   type LookupFieldOptionsPagination,
 } from "@/lib/categories-api";
+import { listTeacherFormLookupOptionsRequest } from "@/lib/teacher-form-api";
 import {
   deleteTeacherRequest,
   downloadTeacherResumeRequest,
@@ -96,13 +97,23 @@ export function CategoryOptionsView({ menuItem }: CategoryOptionsViewProps) {
     }
 
     setLoading(true);
-    const result = await listLookupFieldOptionsRequest(
+    const fromTeacherForm = await listTeacherFormLookupOptionsRequest(
       accessToken,
       menuItem.slug,
       page,
       PAGE_SIZE,
       search
     );
+    const result =
+      fromTeacherForm.ok
+        ? fromTeacherForm
+        : await listLookupFieldOptionsRequest(
+            accessToken,
+            menuItem.slug,
+            page,
+            PAGE_SIZE,
+            search
+          );
     setLoading(false);
 
     if (!result.ok) {

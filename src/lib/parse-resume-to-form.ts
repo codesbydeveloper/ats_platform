@@ -1,4 +1,9 @@
 import { mapApiRowToTeacher } from "@/lib/teachers-api";
+import {
+  EMPLOYED_FIELD_KEY,
+  isBlankFieldValue,
+  normalizeWorkHistoryForForm,
+} from "@/lib/work-experience-form";
 import type { TeacherFormValues } from "@/lib/validations/teacher-form";
 import type { TeacherWorkExperience } from "@/types/teacher";
 
@@ -16,8 +21,8 @@ function hasMeaningfulText(value: string | undefined): value is string {
 function workIsPlaceholder(work: TeacherWorkExperience[]): boolean {
   return (
     work.length === 1 &&
-    work[0]!.schoolName === "—" &&
-    work[0]!.role === "—"
+    isBlankFieldValue(work[0]!.schoolName) &&
+    isBlankFieldValue(work[0]!.role)
   );
 }
 
@@ -79,6 +84,7 @@ export function parsedResumeToFormPatch(
   if (hasMeaningfulText(mapped.name)) patch.name = mapped.name;
   if (hasMeaningfulText(mapped.email)) patch.email = mapped.email;
   if (hasMeaningfulText(mapped.mobile)) patch.mobile = mapped.mobile;
+  if (hasMeaningfulText(mapped.country)) patch.country = mapped.country;
   if (hasMeaningfulText(mapped.state)) patch.state = mapped.state;
   if (hasMeaningfulText(mapped.city)) patch.city = mapped.city;
   if (hasMeaningfulText(mapped.address)) patch.address = mapped.address;
@@ -112,14 +118,13 @@ export function parsedResumeToFormPatch(
   }
 
   if (!workIsPlaceholder(mapped.workHistory)) {
-    patch.workHistory = mapped.workHistory.map((w) => ({
-      id: w.id.startsWith("w-") ? uid("work") : w.id,
-      schoolName: w.schoolName,
-      role: w.role,
-      from: w.from.slice(0, 10),
-      to: w.to ? w.to.slice(0, 10) : null,
-      currentlyWorking: w.currentlyWorking,
-    }));
+    const normalized = normalizeWorkHistoryForForm(mapped.workHistory);
+    if (normalized.length > 0) {
+      patch.workHistory = normalized;
+      patch.customFields = {
+        [EMPLOYED_FIELD_KEY]: "Yes",
+      };
+    }
   }
 
   return patch;

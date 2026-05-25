@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Filter, Loader2, RotateCcw } from "lucide-react";
 
-import { SearchableMultiSelect } from "@/components/shared/searchable-multi-select";
+import { DynamicFilterFieldControl } from "@/components/teachers/dynamic-filter-field";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -14,13 +14,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { listAllCategoriesRequest } from "@/lib/categories-api";
-import {
-  buildTeacherAdvancedFilters,
-  getTeacherFilterValues,
-  patchTeacherFilterValues,
-  type ApiCategoryFilterRow,
-  type TeacherFilterField,
-} from "@/lib/category-filter-options";
+import type { CategoryFilterField } from "@/lib/category-filter-fields";
 import {
   emptyFilters,
   useFilterStore,
@@ -33,6 +27,23 @@ interface FilterDrawerProps {
   onOpenChange: (open: boolean) => void;
 }
 
+function groupBySection(fields: CategoryFilterField[]) {
+  const groups: { title: string; fields: CategoryFilterField[] }[] = [];
+  const map = new Map<string, CategoryFilterField[]>();
+
+  for (const field of fields) {
+    const title = field.sectionTitle?.trim() || "Filters";
+    const list = map.get(title) ?? [];
+    list.push(field);
+    map.set(title, list);
+  }
+
+  for (const [title, list] of map) {
+    groups.push({ title, fields: list });
+  }
+  return groups;
+}
+
 export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const replaceFilters = useFilterStore((s) => s.replaceFilters);
@@ -42,7 +53,7 @@ export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
     useFilterStore.getState().filters
   );
   const [optionsLoading, setOptionsLoading] = useState(false);
-  const [apiFilters, setApiFilters] = useState<ApiCategoryFilterRow[]>([]);
+  const [filterFields, setFilterFields] = useState<CategoryFilterField[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
@@ -57,12 +68,12 @@ export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
       setOptionsLoading(false);
 
       if (result.ok) {
-        setApiFilters(buildTeacherAdvancedFilters(result.categories));
+        setFilterFields(result.filterFields);
         setLoadFailed(false);
         return;
       }
 
-      setApiFilters(buildTeacherAdvancedFilters([]));
+      setFilterFields([]);
       setLoadFailed(true);
     });
 
@@ -70,6 +81,15 @@ export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
       cancelled = true;
     };
   }, [open, accessToken]);
+
+  const grouped = useMemo(() => groupBySection(filterFields), [filterFields]);
+
+  const setDynamic = (key: string, values: string[]) => {
+    setLocal((prev) => ({
+      ...prev,
+      dynamic: { ...prev.dynamic, [key]: values },
+    }));
+  };
 
   const apply = () => {
     replaceFilters(local);
@@ -98,36 +118,33 @@ export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
             {optionsLoading ? (
               <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Loading…
+                Loading filter fields…
               </div>
-            ) : (
-              apiFilters
-                .filter(
-                  (
-                    row
-                  ): row is ApiCategoryFilterRow & { field: TeacherFilterField } =>
-                    row.field != null
-                )
-                .map((row) => (
-                  <SearchableMultiSelect
-                    key={row.categoryId}
-                    label={row.label}
-                    options={row.options}
-                    selected={getTeacherFilterValues(local, row.field)}
-                    onChange={(values) =>
-                      setLocal((p) =>
-                        patchTeacherFilterValues(p, row.field, values)
-                      )
-                    }
-                  />
-                ))
-            )}
-            {loadFailed && !optionsLoading ? (
-              <p className="text-xs text-muted-foreground">
-                Using default state and city lists. Filter lists from the API
-                could not be loaded.
+            ) : filterFields.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {loadFailed
+                  ? "Could not load filters from the API."
+                  : "No filter fields enabled. Turn on the filter icon for fields in Form builder."}
               </p>
-            ) : null}
+            ) : (
+              grouped.map((group) => (
+                <div key={group.title} className="space-y-4">
+                  {grouped.length > 1 ? (
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {group.title}
+                    </p>
+                  ) : null}
+                  {group.fields.map((field) => (
+                    <DynamicFilterFieldControl
+                      key={field.id}
+                      field={field}
+                      value={local.dynamic[field.key] ?? []}
+                      onChange={(values) => setDynamic(field.key, values)}
+                    />
+                  ))}
+                </div>
+              ))
+            )}
           </div>
         </ScrollArea>
         <SheetFooter className="gap-2 border-t pt-4">

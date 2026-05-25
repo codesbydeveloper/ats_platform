@@ -1,5 +1,6 @@
 import { LOOKUP_MENU_ITEMS, type LookupMenuSlug } from "@/config/lookup-menu";
-import { CITIES, EXPERIENCE_BUCKETS, STATES } from "@/data/constants";
+import { EXPERIENCE_BUCKETS } from "@/data/constants";
+import { getAllIndianCities, getIndianStates } from "@/lib/india-locations";
 import { findCategoryForLookup } from "@/lib/lookup-category";
 import type { Category } from "@/types/category";
 import type { TeacherFilters } from "@/store/filter-store";
@@ -77,13 +78,9 @@ function namesFromCategory(cat: Category | undefined): string[] {
   ).sort((a, b) => a.localeCompare(b));
 }
 
-const ALL_CITIES = Array.from(new Set(Object.values(CITIES).flat())).sort(
-  (a, b) => a.localeCompare(b)
-);
-
 const STATE_CITY_FALLBACKS: Record<"states" | "cities", string[]> = {
-  states: [...STATES],
-  cities: ALL_CITIES,
+  states: getIndianStates(),
+  cities: getAllIndianCities(),
 };
 
 const ADVANCED_FILTER_SLUGS: {
@@ -147,17 +144,20 @@ export function buildApiCategoryFilters(
 
 export function getTeacherFilterValues(
   filters: TeacherFilters,
-  field: TeacherFilterField
+  field: string
 ): string[] {
-  return filters[field];
+  return filters.dynamic[field] ?? [];
 }
 
 export function patchTeacherFilterValues(
   filters: TeacherFilters,
-  field: TeacherFilterField,
+  field: string,
   values: string[]
 ): TeacherFilters {
-  return { ...filters, [field]: values };
+  return {
+    ...filters,
+    dynamic: { ...filters.dynamic, [field]: values },
+  };
 }
 
 /** Match experience filter labels from API (e.g. "0-2 years") or legacy bucket labels. */

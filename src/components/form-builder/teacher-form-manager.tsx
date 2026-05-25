@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { Filter, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -28,11 +28,17 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   createTeacherFormFieldRequest,
   createTeacherFormSectionRequest,
   deleteTeacherFormFieldRequest,
   deleteTeacherFormSectionRequest,
   getTeacherFormRequest,
+  isFieldFilterEnabled,
   updateTeacherFormFieldRequest,
   updateTeacherFormSectionRequest,
 } from "@/lib/teacher-form-api";
@@ -198,6 +204,23 @@ export function TeacherFormManager() {
     void reload();
   };
 
+  const toggleFieldFilter = async (fieldKey: string, enabled: boolean) => {
+    if (!accessToken) return;
+    setBusy(true);
+    const result = await updateTeacherFormFieldRequest(accessToken, fieldKey, {
+      filter: enabled ? 1 : 0,
+    });
+    setBusy(false);
+    if (!result.ok) {
+      toast.error("Could not update filter", { description: result.message });
+      return;
+    }
+    toast.success(
+      enabled ? "Field added to advanced filters" : "Field removed from filters"
+    );
+    void reload();
+  };
+
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -274,9 +297,47 @@ export function TeacherFormManager() {
                       <p className="font-medium">{field.label}</p>
                     </div>
                     <div className="flex items-center gap-2">
+                      {isFieldFilterEnabled(field) ? (
+                        <Badge variant="secondary" className="gap-1">
+                          <Filter className="h-3 w-3" />
+                          Filter
+                        </Badge>
+                      ) : null}
                       {field.options?.length ? (
                         <Badge variant="outline">{field.options.length} options</Badge>
                       ) : null}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant={
+                              isFieldFilterEnabled(field) ? "default" : "outline"
+                            }
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            disabled={busy}
+                            aria-pressed={isFieldFilterEnabled(field)}
+                            aria-label={
+                              isFieldFilterEnabled(field)
+                                ? `Remove ${field.label} from advanced filters`
+                                : `Use ${field.label} in advanced filters`
+                            }
+                            onClick={() =>
+                              void toggleFieldFilter(
+                                field.key,
+                                !isFieldFilterEnabled(field)
+                              )
+                            }
+                          >
+                            <Filter className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {isFieldFilterEnabled(field)
+                            ? "In advanced filters — click to remove"
+                            : "Use in advanced filters"}
+                        </TooltipContent>
+                      </Tooltip>
                       <Button
                         variant="ghost"
                         size="sm"

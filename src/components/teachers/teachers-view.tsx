@@ -17,12 +17,9 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { TableSkeleton } from "@/components/shared/loading-skeleton";
-import { FilterDrawer } from "@/components/teachers/filter-drawer";
+import { TeacherAdvancedSearchPanel } from "@/components/teachers/teacher-advanced-search-panel";
 import { ImportExcelModal } from "@/components/teachers/import-excel-modal";
-import {
-  TeacherFormDrawer,
-  teacherToFormValues,
-} from "@/components/teachers/teacher-form-drawer";
+import { teacherToFormValues } from "@/components/teachers/teacher-form-drawer";
 import { TeacherTable } from "@/components/teachers/teacher-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,21 +32,23 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
+import { teacherFiltersAreEmpty } from "@/lib/teacher-list-search-params";
 import { filterTeachers } from "@/utils/filter-teachers";
 import {
   exportTeachersCsv,
   exportTeachersXlsx,
 } from "@/utils/export-teachers";
 import { useAuthStore } from "@/store/auth-store";
+import { listAllCategoriesRequest } from "@/lib/categories-api";
 import { useFilterStore } from "@/store/filter-store";
 import {
   bulkDeleteTeachersRequest,
   deleteTeacherRequest,
-  downloadTeacherResumeRequest,
   exportTeachersFromApi,
   listTeachersRequest,
   updateTeacherRequest,
 } from "@/lib/teachers-api";
+import { openTeacherResumeInNewTab } from "@/lib/teacher-resume";
 import { useTeacherStore } from "@/store/teacher-store";
 import { useUiStore } from "@/store/ui-store";
 import {
@@ -58,51 +57,64 @@ import {
 } from "@/config/teachers-list";
 import type { Teacher, TeacherStatus } from "@/types/teacher";
 
-function FilterChips() {
-  const filters = useFilterStore((s) => s.filters);
+function FilterChips({ onSearch }: { onSearch: () => void }) {
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const appliedFilters = useFilterStore((s) => s.appliedFilters);
   const resetFilters = useFilterStore((s) => s.resetFilters);
+  const [labelByKey, setLabelByKey] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    void listAllCategoriesRequest(accessToken).then((result) => {
+      if (cancelled || !result.ok) return;
+      const map: Record<string, string> = {};
+      for (const field of result.filterFields) {
+        map[field.key] = field.label;
+      }
+      setLabelByKey(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
 
   const chips: { key: string; label: string; onRemove: () => void }[] = [];
 
-  const pushList = (
-    values: string[],
-    prefix: string,
-    key:
-      | "subjects"
-      | "roles"
-      | "grades"
-      | "boards"
-      | "cities"
-      | "states"
-      | "experience"
-      | "status"
-      | "skills"
-  ) => {
+  if (appliedFilters.search.trim()) {
+    chips.push({
+      key: "q-global",
+      label: `Search: ${appliedFilters.search.trim()}`,
+      onRemove: () => {
+        const current = useFilterStore.getState().appliedFilters;
+        const next = { ...current, search: "" };
+        useFilterStore.getState().replaceFilters(next);
+        onSearch();
+      },
+    });
+  }
+
+  for (const [fieldKey, values] of Object.entries(appliedFilters.dynamic)) {
+    const prefix = labelByKey[fieldKey] ?? fieldKey;
     values.forEach((v) => {
       chips.push({
-        key: `${key}-${v}`,
+        key: `${fieldKey}-${v}`,
         label: `${prefix}: ${v}`,
         onRemove: () => {
-          const current = useFilterStore.getState().filters;
-          const nextList = (current[key] as string[]).filter((x) => x !== v);
+          const current = useFilterStore.getState().appliedFilters;
+          const nextList = (current.dynamic[fieldKey] ?? []).filter(
+            (x) => x !== v
+          );
+          const dynamic = { ...current.dynamic, [fieldKey]: nextList };
+          if (!nextList.length) delete dynamic[fieldKey];
           useFilterStore.getState().replaceFilters({
             ...current,
-            [key]: nextList,
+            dynamic,
           });
+          onSearch();
         },
       });
     });
-  };
-
-  pushList(filters.subjects, "Subject", "subjects");
-  pushList(filters.roles, "Role", "roles");
-  pushList(filters.grades, "Grade", "grades");
-  pushList(filters.boards, "Board", "boards");
-  pushList(filters.cities, "City", "cities");
-  pushList(filters.states, "State", "states");
-  pushList(filters.experience, "Exp", "experience");
-  pushList(filters.status, "Status", "status");
-  pushList(filters.skills, "Skill", "skills");
+  }
 
   if (!chips.length) return null;
 
@@ -119,7 +131,14 @@ function FilterChips() {
           <span className="text-muted-foreground">×</span>
         </Badge>
       ))}
-      <Button variant="ghost" size="sm" onClick={() => resetFilters()}>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          resetFilters();
+          onSearch();
+        }}
+      >
         Clear all
       </Button>
     </div>
@@ -130,26 +149,21 @@ export function TeachersView() {
   const router = useRouter();
   const accessToken = useAuthStore((s) => s.accessToken);
   const teachers = useTeacherStore((s) => s.teachers);
-  const addTeacher = useTeacherStore((s) => s.addTeacher);
   const updateTeacher = useTeacherStore((s) => s.updateTeacher);
   const deleteTeacher = useTeacherStore((s) => s.deleteTeacher);
   const bulkDelete = useTeacherStore((s) => s.bulkDelete);
-  const filters = useFilterStore((s) => s.filters);
-  const setFilters = useFilterStore((s) => s.setFilters);
+  const appliedFilters = useFilterStore((s) => s.appliedFilters);
   const compactDensity = useUiStore((s) => s.compactDensity);
 
   const useApiList = Boolean(accessToken);
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const [formOpen, setFormOpen] = useState(false);
-  const [formMode, setFormMode] = useState<"add" | "edit">("add");
-  const [activeTeacher, setActiveTeacher] = useState<Teacher | null>(null);
-  const [filterOpen, setFilterOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Teacher | null>(null);
   const [bulkConfirm, setBulkConfirm] = useState(false);
-  const [resumeDownloadId, setResumeDownloadId] = useState<string | null>(null);
+  const [resumeOpenId, setResumeOpenId] = useState<string | null>(null);
 
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(TEACHERS_DEFAULT_PAGE_SIZE);
@@ -169,6 +183,24 @@ export function TeachersView() {
     }
   }, [accessToken]);
 
+  const appliedFilterQueryKey = useMemo(
+    () =>
+      JSON.stringify({
+        search: appliedFilters.search,
+        dynamic: appliedFilters.dynamic,
+      }),
+    [appliedFilters.search, appliedFilters.dynamic]
+  );
+
+  const hasActiveFilters = useMemo(
+    () => !teacherFiltersAreEmpty(appliedFilters),
+    [appliedFilters]
+  );
+
+  const handleSearchSubmit = useCallback(() => {
+    setPageIndex(0);
+  }, []);
+
   useEffect(() => {
     if (!accessToken) return;
     let cancelled = false;
@@ -178,13 +210,15 @@ export function TeachersView() {
       const res = await listTeachersRequest(
         accessToken,
         pageIndex + 1,
-        pageSize
+        pageSize,
+        appliedFilters
       );
       if (cancelled) return;
       setListLoading(false);
       if (!res.ok) {
         setListError(res.message);
         setApiTeachers([]);
+        setApiTotal(0);
         return;
       }
       setApiTeachers(res.teachers);
@@ -193,7 +227,7 @@ export function TeachersView() {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, pageIndex, pageSize, fetchKey]);
+  }, [accessToken, pageIndex, pageSize, fetchKey, appliedFilterQueryKey]);
 
   useEffect(() => {
     setRowSelection({});
@@ -240,15 +274,16 @@ export function TeachersView() {
     [accessToken, updateTeacher, refetchTeachers]
   );
 
-  const filtered = useMemo(() => {
-    const source = useApiList ? apiTeachers : teachers;
-    return filterTeachers(source, filters);
-  }, [useApiList, apiTeachers, teachers, filters]);
+  /** API list is filtered server-side; local store uses client-side filters. */
+  const tableRows = useMemo(() => {
+    if (useApiList) return apiTeachers;
+    return filterTeachers(teachers, appliedFilters);
+  }, [useApiList, apiTeachers, teachers, appliedFilters]);
 
   const selectedRows = useMemo(() => {
     const ids = Object.keys(rowSelection).filter((id) => rowSelection[id]);
-    return filtered.filter((t) => ids.includes(t.id));
-  }, [filtered, rowSelection]);
+    return tableRows.filter((t) => ids.includes(t.id));
+  }, [tableRows, rowSelection]);
 
   const exportName = () =>
     `teachers-export-${new Date().toISOString().slice(0, 10)}`;
@@ -283,7 +318,7 @@ export function TeachersView() {
         const result = await exportTeachersFromApi(accessToken, {
           scope,
           format,
-          filters: scope === "filtered" ? filters : undefined,
+          filters: scope === "filtered" ? appliedFilters : undefined,
         });
         if (!result.ok) {
           toast.error("Export failed", { description: result.message });
@@ -296,10 +331,10 @@ export function TeachersView() {
       }
 
       let data: Teacher[] = teachers;
-      if (scope === "filtered") data = filtered;
+      if (scope === "filtered") data = tableRows;
       if (scope === "selected") {
         const ids = new Set(selectedRows.map((t) => t.id));
-        data = filtered.filter((t) => ids.has(t.id));
+        data = tableRows.filter((t) => ids.has(t.id));
         if (!data.length) {
           toast.error("Select at least one row");
           return;
@@ -311,19 +346,15 @@ export function TeachersView() {
         description: `${data.length} record(s) · ${format.toUpperCase()}`,
       });
     },
-    [accessToken, selectedRows, filters, teachers, filtered]
+    [accessToken, selectedRows, appliedFilters, teachers, tableRows]
   );
 
   const openAdd = () => {
-    setFormMode("add");
-    setActiveTeacher(null);
-    setFormOpen(true);
+    router.push("/teachers/new");
   };
 
   const openEdit = (t: Teacher) => {
-    setFormMode("edit");
-    setActiveTeacher(t);
-    setFormOpen(true);
+    router.push(`/teachers/${encodeURIComponent(t.id)}/edit`);
   };
 
   return (
@@ -353,6 +384,14 @@ export function TeachersView() {
             Retry
           </Button>
         </div>
+      ) : null}
+
+      {advancedSearchOpen ? (
+        <TeacherAdvancedSearchPanel
+          open={advancedSearchOpen}
+          onSearch={handleSearchSubmit}
+          searching={listLoading}
+        />
       ) : null}
 
       <div className="sticky top-14 z-30 -mx-4 border-b bg-background/90 px-4 py-3 backdrop-blur md:top-16 md:-mx-8 md:px-8">
@@ -414,11 +453,12 @@ export function TeachersView() {
             </DropdownMenu>
             <Button
               size="sm"
-              variant="secondary"
-              onClick={() => setFilterOpen(true)}
+              variant={advancedSearchOpen ? "default" : "secondary"}
+              onClick={() => setAdvancedSearchOpen((open) => !open)}
+              aria-expanded={advancedSearchOpen}
             >
               <Filter className="mr-1 h-4 w-4" />
-              Advanced filters
+              Advanced search
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -441,7 +481,7 @@ export function TeachersView() {
             </DropdownMenu>
         </div>
         <Separator className="my-3" />
-        <FilterChips />
+        <FilterChips onSearch={handleSearchSubmit} />
       </div>
 
       {useApiList && listLoading ? (
@@ -452,8 +492,9 @@ export function TeachersView() {
         </p>
       ) : useApiList &&
           !listError &&
-          filtered.length === 0 &&
-          apiTotal === 0 ? (
+          tableRows.length === 0 &&
+          apiTotal === 0 &&
+          !hasActiveFilters ? (
         <EmptyState
           icon={Upload}
           title="No teachers yet"
@@ -461,17 +502,34 @@ export function TeachersView() {
           actionLabel="Add teacher"
           onAction={openAdd}
         />
-      ) : !useApiList && filtered.length === 0 ? (
+      ) : useApiList &&
+          !listError &&
+          tableRows.length === 0 &&
+          hasActiveFilters ? (
+        <EmptyState
+          icon={Filter}
+          title="No teachers match your search"
+          description="Clear advanced search filters to see all teachers from the server."
+          actionLabel="Reset search"
+          onAction={() => {
+            useFilterStore.getState().resetFilters();
+            handleSearchSubmit();
+          }}
+        />
+      ) : !useApiList && tableRows.length === 0 ? (
         <EmptyState
           icon={Upload}
           title="No teachers match"
           description="Adjust filters or import a spreadsheet to grow your roster."
           actionLabel="Reset filters"
-          onAction={() => useFilterStore.getState().resetFilters()}
+          onAction={() => {
+            useFilterStore.getState().resetFilters();
+            handleSearchSubmit();
+          }}
         />
       ) : (
         <TeacherTable
-          data={filtered}
+          data={tableRows}
           rowSelection={rowSelection}
           onRowSelectionChange={setRowSelection}
           compact={compactDensity}
@@ -496,55 +554,22 @@ export function TeachersView() {
           onView={(t) => router.push(`/teachers/${t.id}`)}
           onEdit={openEdit}
           onDelete={(t) => setDeleteTarget(t)}
-          onDownloadResume={(t) => {
+          onOpenResume={(t) => {
             void (async () => {
-              if (!accessToken) {
-                toast.error("Sign in to download resume");
-                return;
-              }
-              setResumeDownloadId(t.id);
-              const result = await downloadTeacherResumeRequest(
-                accessToken,
-                t.id,
-                t.resumeFileName
-              );
-              setResumeDownloadId(null);
+              setResumeOpenId(t.id);
+              const result = await openTeacherResumeInNewTab(accessToken, t);
+              setResumeOpenId(null);
               if (!result.ok) {
-                toast.error("Download failed", {
+                toast.error("Could not open resume", {
                   description: result.message,
                 });
-                return;
               }
-              toast.success("Resume downloaded", {
-                description: result.filename,
-              });
             })();
           }}
-          resumeDownloadBusyId={resumeDownloadId}
+          resumeOpenBusyId={resumeOpenId}
         />
       )}
 
-      <TeacherFormDrawer
-        key={activeTeacher?.id ?? "new"}
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        mode={formMode}
-        teacher={activeTeacher}
-        teachers={teachers}
-        onSave={(t) => {
-          if (formMode === "add") {
-            addTeacher(t);
-            if (accessToken) {
-              setPageIndex(0);
-              refetchTeachers();
-            }
-          } else {
-            updateTeacher(t.id, t);
-            if (accessToken) refetchTeachers();
-          }
-        }}
-      />
-      <FilterDrawer open={filterOpen} onOpenChange={setFilterOpen} />
       <ImportExcelModal
         open={importOpen}
         onOpenChange={setImportOpen}

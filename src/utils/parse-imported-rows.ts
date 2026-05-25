@@ -1,5 +1,6 @@
-import { STATES } from "@/data/constants";
 import { SUBJECTS } from "@/data/constants";
+import { getDefaultIndianState } from "@/lib/india-locations";
+import { DEFAULT_COUNTRY_NAME } from "@/lib/locations";
 import type { Teacher, TeacherStatus, TeacherWorkExperience } from "@/types/teacher";
 import {
   normalizeExcelRow,
@@ -67,7 +68,7 @@ export function rowToTeacher(
   const mobile = normalized.mobile;
   const city = normalized.city;
   const state =
-    normalized.state.trim() || STATES[0]!;
+    normalized.state.trim() || getDefaultIndianState();
   const subjectsRaw = normalized.subjectsTaught;
   const statusRaw = (
     raw.status != null ? String(raw.status) : "active"
@@ -122,6 +123,7 @@ export function rowToTeacher(
     mobile,
     city,
     state,
+    country: DEFAULT_COUNTRY_NAME,
     address: normalized.address || `${city}, ${state}`,
     ugCollege: ug,
     pgUniversity: pg,

@@ -10,12 +10,16 @@ export interface TeacherWorkExperience {
 }
 
 export interface Teacher {
+  /** Numeric or primary key for API routes (`/api/teachers/:id`). */
   id: string;
+  /** Human-readable code from API (`teacher_id`, e.g. TCH-00005). */
+  teacherCode?: string | null;
   name: string;
   email: string;
   mobile: string;
   city: string;
   state: string;
+  country: string;
   address: string;
   ugCollege: string;
   pgUniversity: string;
@@ -34,6 +38,8 @@ export interface Teacher {
   experienceYears: number;
   workHistory: TeacherWorkExperience[];
   resumeFileName: string | null;
+  /** Public or storage URL for opening resume in browser. */
+  resumeUrl?: string | null;
   resumeMime: string | null;
   notes: string;
   status: TeacherStatus;

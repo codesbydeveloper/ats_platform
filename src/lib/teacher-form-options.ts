@@ -1,10 +1,29 @@
 import { LOOKUP_MENU_ITEMS, type LookupMenuSlug } from "@/config/lookup-menu";
-import { BOARDS, CITIES, GRADES, ROLES, STATES, SUBJECTS } from "@/data/constants";
+import { BOARDS, GRADES, ROLES, SUBJECTS } from "@/data/constants";
+import {
+  getAllIndianCities,
+  getIndianCitiesByState,
+  getIndianStates,
+} from "@/lib/india-locations";
+import {
+  getCityNamesForState,
+  getCountryNames,
+  getStateNamesForCountry,
+} from "@/lib/locations";
 import { findCategoryForLookup } from "@/lib/lookup-category";
 import { listAllCategoriesRequest } from "@/lib/categories-api";
+import { getTeacherFormRequest } from "@/lib/teacher-form-api";
 import { apiFieldKeyToFormKey } from "@/lib/teacher-form-field-map";
 import type { Category } from "@/types/category";
-import type { ApiTeacherFormField } from "@/types/teacher-form-api";
+import {
+  findTeacherFormFieldForLookupSlug,
+  getSelectMultiselectFields,
+  LOOKUP_SLUG_TO_FIELD_KEY,
+} from "@/lib/teacher-form-select-fields";
+import type {
+  ApiTeacherFormConfig,
+  ApiTeacherFormField,
+} from "@/types/teacher-form-api";
 
 export type TeacherFormOptionsMap = {
   states: string[];
@@ -14,11 +33,9 @@ export type TeacherFormOptionsMap = {
 };
 
 const EMPTY_OPTIONS: TeacherFormOptionsMap = {
-  states: [...STATES],
-  citiesByState: { ...CITIES },
-  allCities: Array.from(new Set(Object.values(CITIES).flat())).sort((a, b) =>
-    a.localeCompare(b)
-  ),
+  states: getIndianStates(),
+  citiesByState: getIndianCitiesByState(),
+  allCities: getAllIndianCities(),
   bySlug: {},
 };
 
@@ -65,9 +82,9 @@ export function buildTeacherFormOptions(
   }
 
   const states =
-    bySlug["state-wise"]?.length ? bySlug["state-wise"]! : [...STATES];
+    bySlug["state-wise"]?.length ? bySlug["state-wise"]! : getIndianStates();
 
-  const citiesByState: Record<string, string[]> = { ...CITIES };
+  const citiesByState: Record<string, string[]> = getIndianCitiesByState();
   const apiCities = bySlug["city-wise"];
   if (apiCities?.length) {
     for (const state of states) {
@@ -117,19 +134,76 @@ export function getEmptyTeacherFormOptions(): TeacherFormOptionsMap {
 export async function fetchTeacherFormOptions(
   accessToken: string | null
 ): Promise<TeacherFormOptionsMap> {
-  const result = await listAllCategoriesRequest(accessToken);
-  if (!result.ok) {
-    return getEmptyTeacherFormOptions();
+  const [catResult, formResult] = await Promise.all([
+    listAllCategoriesRequest(accessToken),
+    getTeacherFormRequest(accessToken),
+  ]);
+  const base = catResult.ok
+    ? buildTeacherFormOptions(catResult.categories)
+    : getEmptyTeacherFormOptions();
+  if (formResult.ok && formResult.data.sections.length > 0) {
+    return mergeTeacherFormConfigOptions(formResult.data, base);
   }
-  return buildTeacherFormOptions(result.categories);
+  return base;
 }
 
+/** Overlay select/multiselect `options` from GET /api/teacher-form onto form dropdowns. */
+export function mergeTeacherFormConfigOptions(
+  config: ApiTeacherFormConfig,
+  base: TeacherFormOptionsMap
+): TeacherFormOptionsMap {
+  const bySlug: Partial<Record<LookupMenuSlug, string[]>> = {
+    ...base.bySlug,
+  };
+
+  for (const slug of Object.keys(LOOKUP_SLUG_TO_FIELD_KEY) as LookupMenuSlug[]) {
+    const field = findTeacherFormFieldForLookupSlug(config, slug);
+    if (field?.options?.length) {
+      bySlug[slug] = field.options;
+    }
+  }
+
+  let states = base.states;
+  const stateField = findTeacherFormFieldForLookupSlug(config, "state-wise");
+  if (stateField?.options?.length) {
+    states = stateField.options;
+  }
+
+  const citiesByState = { ...base.citiesByState };
+  const cityField = findTeacherFormFieldForLookupSlug(config, "city-wise");
+  if (cityField?.options?.length) {
+    for (const state of states) {
+      if (!citiesByState[state]?.length) {
+        citiesByState[state] = cityField.options;
+      }
+    }
+  }
+
+  const allCities = Array.from(
+    new Set([
+      ...Object.values(citiesByState).flat(),
+      ...(cityField?.options ?? []),
+    ])
+  ).sort((a, b) => a.localeCompare(b));
+
+  return { states, citiesByState, allCities, bySlug };
+}
+
+export { getSelectMultiselectFields };
+
 /** Options for a select/multiselect field (API field.options → categories → constants). */
+export type LocationSelectContext = {
+  selectedCountry?: string;
+  selectedState?: string;
+};
+
 export function resolveFieldOptions(
   field: ApiTeacherFormField,
   formOptions: TeacherFormOptionsMap,
-  selectedState?: string
+  location?: LocationSelectContext
 ): string[] {
+  const selectedCountry = location?.selectedCountry;
+  const selectedState = location?.selectedState;
   if (field.options && field.options.length > 0) {
     return field.options;
   }
@@ -139,16 +213,26 @@ export function resolveFieldOptions(
     FIELD_KEY_TO_SLUG[field.key] ??
     (formKey ? FIELD_KEY_TO_SLUG[formKey] : undefined);
 
+  if (formKey === "country" || field.key === "country") {
+    return getCountryNames();
+  }
+
   if (formKey === "state" || field.key === "state") {
+    if (selectedCountry?.trim()) {
+      const fromPackage = getStateNamesForCountry(selectedCountry);
+      if (fromPackage.length) return fromPackage;
+    }
     return formOptions.states;
   }
 
   if (formKey === "city" || field.key === "city") {
-    if (selectedState?.trim()) {
-      const forState = formOptions.citiesByState[selectedState];
-      if (forState?.length) return forState;
+    if (!selectedState?.trim()) return [];
+    if (selectedCountry?.trim()) {
+      const fromPackage = getCityNamesForState(selectedCountry, selectedState);
+      if (fromPackage.length) return fromPackage;
     }
-    return formOptions.allCities;
+    const forState = formOptions.citiesByState[selectedState];
+    return forState?.length ? forState : [];
   }
 
   if (slug && formOptions.bySlug[slug]?.length) {

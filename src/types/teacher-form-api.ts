@@ -23,6 +23,8 @@ export interface ApiTeacherFormField {
   /** System fields cannot be deleted on the backend. */
   system?: boolean;
   deletable?: boolean;
+  /** When true (or 1), field is available in teacher advanced filters. */
+  filter?: boolean | number;
 }
 
 export interface ApiTeacherFormSection {
@@ -60,6 +62,7 @@ export type CreateTeacherFormFieldInput = {
   required?: boolean;
   options?: string[];
   sortOrder?: number;
+  filter?: boolean | number;
 };
 
 export type UpdateTeacherFormFieldInput = Partial<{
@@ -69,4 +72,5 @@ export type UpdateTeacherFormFieldInput = Partial<{
   options: string[];
   sortOrder: number;
   sectionId: string;
+  filter: boolean | number;
 }>;

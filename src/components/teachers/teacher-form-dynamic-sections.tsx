@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Plus, X } from "lucide-react";
 import {
   useFieldArray,
@@ -7,7 +8,8 @@ import {
   type UseFormReturn,
 } from "react-hook-form";
 
-import { MultiToggle, SkillsTagsEditor } from "@/components/teachers/teacher-form-controls";
+import { SearchableMultiSelect } from "@/components/shared/searchable-multi-select";
+import { SkillsTagsEditor } from "@/components/teachers/teacher-form-controls";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -27,7 +29,31 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  formatMultiselectStoredValue,
+  parseMultiselectStoredValue,
+} from "@/lib/multiselect-form-value";
 import { apiFieldKeyToFormKey } from "@/lib/teacher-form-field-map";
+import {
+  configHasWorkExperienceRows,
+  defaultWorkEntry,
+  EMPLOYED_FIELD_KEY,
+  employedValueFromSalary,
+  getEmployedValue,
+  getWorkRepeatFieldMeta,
+  isSalaryFieldKey,
+  isWorkDetailFieldKeyExcludingSalary,
+  isWorkExperienceSection,
+  isWorkRepeatFieldKey,
+  shouldShowEmployedField,
+  shouldShowSalaryField,
+  shouldShowWorkDetailFields,
+  type WorkRepeatFieldMeta,
+} from "@/lib/work-experience-form";
+import {
+  getCityNamesForState,
+  getStateNamesForCountry,
+} from "@/lib/locations";
 import {
   resolveFieldOptions,
   type TeacherFormOptionsMap,
@@ -41,10 +67,198 @@ import type {
 import { cn } from "@/lib/utils";
 import { uid } from "@/utils/id";
 
-const FIELD_GRID = "grid w-full gap-4 md:grid-cols-2";
+const FIELD_GRID = "grid w-full grid-cols-1 gap-4 sm:grid-cols-2";
+
+/** Built-in form keys that store multiselect values as string[]. */
+const MULTISELECT_ARRAY_FORM_KEYS = new Set([
+  "boards",
+  "grades",
+  "roles",
+  "skills",
+]);
 
 function fieldItemClass(fullWidth = false) {
-  return cn("w-full min-w-0", fullWidth && "md:col-span-2");
+  return cn("w-full min-w-0", fullWidth && "sm:col-span-2");
+}
+
+function isLocationFormKey(formKey: string | null): boolean {
+  return (
+    formKey === "country" || formKey === "state" || formKey === "city"
+  );
+}
+
+function findLocationFields(fields: ApiTeacherFormField[]) {
+  const countryField = fields.find(
+    (f) => apiFieldKeyToFormKey(f.key) === "country"
+  );
+  const stateField = fields.find((f) => apiFieldKeyToFormKey(f.key) === "state");
+  const cityField = fields.find((f) => apiFieldKeyToFormKey(f.key) === "city");
+  const ordered = [countryField, stateField, cityField].filter(
+    (f): f is ApiTeacherFormField => f != null
+  );
+  const anchor = [...ordered].sort(
+    (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+  )[0];
+  return { countryField, stateField, cityField, anchor };
+}
+
+function LocationCascadeFields({
+  control,
+  form,
+  formOptions,
+  countryField,
+  stateField,
+  cityField,
+  layoutErrors,
+  selectedCountry,
+}: {
+  control: Control<TeacherFormValues>;
+  form: UseFormReturn<TeacherFormValues>;
+  formOptions: TeacherFormOptionsMap;
+  countryField?: ApiTeacherFormField;
+  stateField?: ApiTeacherFormField;
+  cityField?: ApiTeacherFormField;
+  layoutErrors: Record<string, string>;
+  selectedCountry?: string;
+}) {
+  const selectedState = form.watch("state");
+  const locationCtx = { selectedCountry, selectedState };
+
+  const countryOptions = countryField
+    ? resolveFieldOptions(
+        { ...countryField, type: "select" },
+        formOptions,
+        locationCtx
+      )
+    : [];
+  const stateOptions =
+    stateField && selectedCountry?.trim()
+    ? resolveFieldOptions(
+        { ...stateField, key: "state", type: "select" },
+        formOptions,
+        locationCtx
+      )
+    : [];
+  const cityOptions =
+    cityField && selectedCountry?.trim() && selectedState?.trim()
+      ? resolveFieldOptions(
+          { ...cityField, key: "city", type: "select" },
+          formOptions,
+          locationCtx
+        )
+      : [];
+
+  const renderSelect = (
+    name: "country" | "state" | "city",
+    label: string,
+    options: string[],
+    emptyHint: string,
+    apiField: ApiTeacherFormField | undefined,
+    onChangeExtra?: (value: string) => void
+  ) => {
+    if (!apiField) return null;
+    const errorKey = apiField.key;
+    return (
+    <FormField
+      control={control}
+      name={name}
+      render={({ field: f }) => (
+        <FormItem className={fieldItemClass()}>
+          <FormLabel>
+            {label}
+            {apiField.required ? (
+              <span className="text-destructive" aria-hidden>
+                {" "}
+                *
+              </span>
+            ) : null}
+          </FormLabel>
+          <Select
+            onValueChange={(v) => {
+              f.onChange(v);
+              onChangeExtra?.(v);
+            }}
+            value={
+              f.value && String(f.value).trim().length > 0
+                ? String(f.value)
+                : undefined
+            }
+          >
+            <FormControl>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={`Select ${label}`} />
+              </SelectTrigger>
+            </FormControl>
+            <SelectContent className="z-[200]">
+              {options.length === 0 ? (
+                <div className="px-2 py-3 text-sm text-muted-foreground">
+                  {emptyHint}
+                </div>
+              ) : (
+                options.map((o) => (
+                  <SelectItem key={o} value={o}>
+                    {o}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+          <FieldError message={layoutErrors[errorKey]} />
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+    );
+  };
+
+  const cols =
+    [countryField, stateField, cityField].filter(Boolean).length || 1;
+
+  return (
+    <div
+      className={cn(
+        "grid w-full min-w-0 gap-4 sm:col-span-2",
+        cols === 3 && "grid-cols-1 sm:grid-cols-3",
+        cols === 2 && "grid-cols-1 sm:grid-cols-2",
+        cols === 1 && "grid-cols-1"
+      )}
+    >
+      {renderSelect(
+        "country",
+        countryField?.label ?? "Country",
+        countryOptions,
+        "No countries available",
+        countryField,
+        (v) => {
+          const states = getStateNamesForCountry(v);
+          const nextState = states[0] ?? "";
+          form.setValue("state", nextState);
+          const cities = nextState ? getCityNamesForState(v, nextState) : [];
+          form.setValue("city", cities[0] ?? "");
+        }
+      )}
+      {renderSelect(
+        "state",
+        stateField?.label ?? "State",
+        stateOptions,
+        "Select a country first",
+        stateField,
+        (v) => {
+          const country = form.getValues("country");
+          if (!country) return;
+          const cities = getCityNamesForState(country, v);
+          form.setValue("city", cities[0] ?? "");
+        }
+      )}
+      {renderSelect(
+        "city",
+        cityField?.label ?? "City",
+        cityOptions,
+        "Select a state first",
+        cityField
+      )}
+    </div>
+  );
 }
 
 function isExtraEducationField(field: ApiTeacherFormField): boolean {
@@ -98,11 +312,311 @@ interface TeacherFormDynamicSectionsProps {
   form: UseFormReturn<TeacherFormValues>;
   formOptions: TeacherFormOptionsMap;
   layoutErrors?: Record<string, string>;
+  /** When true, Are You Employed is read-only and synced from salary (Yes if salary &gt; 0, else No). */
+  isEditMode?: boolean;
 }
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
   return <p className="text-sm font-medium text-destructive">{message}</p>;
+}
+
+function WorkEntryDurationTo({
+  index,
+  field,
+  control,
+  form,
+  layoutError,
+  showAddButton,
+  onAdd,
+}: {
+  index: number;
+  field: ApiTeacherFormField;
+  control: Control<TeacherFormValues>;
+  form: UseFormReturn<TeacherFormValues>;
+  layoutError?: string;
+  showAddButton?: boolean;
+  onAdd?: () => void;
+}) {
+  const tillDate = Boolean(
+    form.watch(`workHistory.${index}.currentlyWorking` as const)
+  );
+
+  return (
+    <div className={cn("min-w-0", showAddButton ? "flex flex-1 gap-2" : "w-full")}>
+      <FormItem className={cn("min-w-0 flex-1 space-y-2")}>
+        <div className="flex items-center justify-between gap-3">
+          <FormLabel className="!mt-0">
+            {field.label}
+            {field.required && !tillDate ? (
+              <span className="text-destructive" aria-hidden>
+                {" "}
+                *
+              </span>
+            ) : null}
+          </FormLabel>
+          <FormField
+            control={control}
+            name={`workHistory.${index}.currentlyWorking`}
+            render={({ field: tillField }) => (
+              <div className="flex shrink-0 items-center gap-2">
+                <FormControl>
+                  <Checkbox
+                    checked={Boolean(tillField.value)}
+                    onCheckedChange={(checked) => {
+                      const on = Boolean(checked);
+                      tillField.onChange(on);
+                      if (on) {
+                        form.setValue(`workHistory.${index}.to`, null);
+                      }
+                    }}
+                  />
+                </FormControl>
+                <FormLabel className="!mt-0 cursor-pointer font-normal">
+                  Till Date
+                </FormLabel>
+              </div>
+            )}
+          />
+        </div>
+        {!tillDate ? (
+          <FormField
+            control={control}
+            name={`workHistory.${index}.to`}
+            render={({ field: f }) => (
+              <>
+                <FormControl>
+                  <Input
+                    className="w-full"
+                    type="date"
+                    value={f.value ?? ""}
+                    onChange={f.onChange}
+                    onBlur={f.onBlur}
+                    name={f.name}
+                    ref={f.ref}
+                  />
+                </FormControl>
+                <FieldError message={layoutError} />
+                <FormMessage />
+              </>
+            )}
+          />
+        ) : (
+          <FieldError message={layoutError} />
+        )}
+      </FormItem>
+      {showAddButton && onAdd ? (
+        <Button
+          type="button"
+          variant="default"
+          size="icon"
+          className="mt-6 h-10 w-10 shrink-0"
+          aria-label="Add another work experience"
+          onClick={onAdd}
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function WorkExperienceEntries({
+  form,
+  control,
+  meta,
+  formOptions,
+  layoutErrors,
+}: {
+  form: UseFormReturn<TeacherFormValues>;
+  control: Control<TeacherFormValues>;
+  meta: WorkRepeatFieldMeta;
+  formOptions: TeacherFormOptionsMap;
+  layoutErrors: Record<string, string>;
+}) {
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: "workHistory",
+  });
+
+  const roleField = meta.role;
+  const roleOptions = roleField
+    ? resolveFieldOptions(
+        { ...roleField, type: "multiselect" },
+        formOptions
+      )
+    : [];
+
+  const addEntry = () => {
+    append(defaultWorkEntry());
+  };
+
+  if (fields.length === 0) {
+    return (
+      <div className="md:col-span-2">
+        <Button type="button" variant="outline" size="sm" onClick={addEntry}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add work experience
+        </Button>
+        <FieldError message={layoutErrors.workHistory} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 md:col-span-2">
+      {fields.map((row, index) => (
+        <div
+          key={row.id}
+          className="space-y-4 rounded-lg border border-border/80 bg-muted/20 p-4"
+        >
+          {fields.length > 1 ? (
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">
+                Experience {index + 1}
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => remove(index)}
+              >
+                Remove
+              </Button>
+            </div>
+          ) : null}
+          <div className={FIELD_GRID}>
+            {meta.school ? (
+              <FormField
+                control={control}
+                name={`workHistory.${index}.schoolName`}
+                render={({ field: f }) => (
+                  <FormItem className={fieldItemClass()}>
+                    <FormLabel>
+                      {meta.school!.label}
+                      {meta.school!.required ? (
+                        <span className="text-destructive" aria-hidden>
+                          {" "}
+                          *
+                        </span>
+                      ) : null}
+                    </FormLabel>
+                    <FormControl>
+                      <Input className="w-full" {...f} />
+                    </FormControl>
+                    <FieldError
+                      message={layoutErrors[`workHistory.${index}.schoolName`]}
+                    />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : null}
+            {roleField ? (
+              <FormField
+                control={control}
+                name={`workHistory.${index}.role`}
+                render={({ field: f }) => {
+                  const selected = f.value
+                    ? String(f.value)
+                        .split(/[,;]/)
+                        .map((s) => s.trim())
+                        .filter(
+                          (s) =>
+                            Boolean(s) && s !== "—" && s !== "Unknown"
+                        )
+                    : [];
+                  return (
+                    <FormItem className={fieldItemClass()}>
+                      <FormLabel>
+                        {roleField.label}
+                        {roleField.required ? (
+                          <span className="text-destructive" aria-hidden>
+                            {" "}
+                            *
+                          </span>
+                        ) : null}
+                      </FormLabel>
+                      <FormControl>
+                        {roleOptions.length > 0 ? (
+                          <SearchableMultiSelect
+                            hideLabel
+                            label={roleField.label}
+                            placeholder={`Select ${roleField.label.toLowerCase()}…`}
+                            options={roleOptions}
+                            selected={selected}
+                            onChange={(next) =>
+                              f.onChange(
+                                next.length > 0 ? next.join(", ") : ""
+                              )
+                            }
+                            searchPlaceholder={`Search ${roleField.label.toLowerCase()}…`}
+                          />
+                        ) : (
+                          <Input
+                            className="w-full"
+                            value={String(f.value ?? "")}
+                            onChange={f.onChange}
+                            onBlur={f.onBlur}
+                            name={f.name}
+                            ref={f.ref}
+                          />
+                        )}
+                      </FormControl>
+                      <FieldError
+                        message={layoutErrors[`workHistory.${index}.role`]}
+                      />
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
+              />
+            ) : null}
+            {meta.from ? (
+              <FormField
+                control={control}
+                name={`workHistory.${index}.from`}
+                render={({ field: f }) => (
+                  <FormItem className={fieldItemClass()}>
+                    <FormLabel>
+                      {meta.from!.label}
+                      {meta.from!.required ? (
+                        <span className="text-destructive" aria-hidden>
+                          {" "}
+                          *
+                        </span>
+                      ) : null}
+                    </FormLabel>
+                    <FormControl>
+                      <Input className="w-full" type="date" {...f} />
+                    </FormControl>
+                    <FieldError
+                      message={layoutErrors[`workHistory.${index}.from`]}
+                    />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : null}
+            {meta.to ? (
+              <div className={fieldItemClass()}>
+                <WorkEntryDurationTo
+                  index={index}
+                  field={meta.to}
+                  control={control}
+                  form={form}
+                  layoutError={layoutErrors[`workHistory.${index}.to`]}
+                  showAddButton={index === fields.length - 1}
+                  onAdd={addEntry}
+                />
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ))}
+      <FieldError message={layoutErrors.workHistory} />
+    </div>
+  );
 }
 
 function WorkExperienceBlock({
@@ -267,46 +781,95 @@ function ApiFormField({
   layoutError,
   form,
   formOptions,
+  selectedCountry,
   selectedState,
+  disabled,
 }: {
   field: ApiTeacherFormField;
   control: Control<TeacherFormValues>;
   layoutError?: string;
   form: UseFormReturn<TeacherFormValues>;
   formOptions: TeacherFormOptionsMap;
+  selectedCountry?: string;
   selectedState?: string;
+  disabled?: boolean;
 }) {
-  const options = resolveFieldOptions(field, formOptions, selectedState);
+  const options = resolveFieldOptions(field, formOptions, {
+    selectedCountry,
+    selectedState,
+  });
   const formKey = apiFieldKeyToFormKey(field.key);
+
+  if (formKey === "country" || formKey === "state" || formKey === "city") {
+    return null;
+  }
 
   if (field.type === "work_experience") return null;
   if (formKey === "extraEducation" || isExtraEducationField(field)) return null;
   if (isSkillsField(field)) return null;
 
+  if (field.type === "multiselect") {
+    const arrayFormKey =
+      formKey && MULTISELECT_ARRAY_FORM_KEYS.has(formKey) ? formKey : null;
+    const stringFormKey =
+      formKey && !arrayFormKey ? formKey : null;
+
+    return (
+      <FormField
+        control={control}
+        name={
+          arrayFormKey
+            ? arrayFormKey
+            : stringFormKey
+              ? stringFormKey
+              : (`customFields.${field.key}` as "customFields")
+        }
+        render={({ field: f }) => (
+          <FormItem className={fieldItemClass()}>
+            <FormLabel>
+              {field.label}
+              {field.required ? (
+                <span className="text-destructive" aria-hidden>
+                  {" "}
+                  *
+                </span>
+              ) : null}
+            </FormLabel>
+            <FormControl>
+              <SearchableMultiSelect
+                hideLabel
+                label={field.label}
+                options={options}
+                selected={
+                  arrayFormKey
+                    ? Array.isArray(f.value)
+                      ? (f.value as string[])
+                      : []
+                    : parseMultiselectStoredValue(f.value)
+                }
+                onChange={(next) => {
+                  if (arrayFormKey) {
+                    f.onChange(next);
+                    return;
+                  }
+                  if (stringFormKey) {
+                    f.onChange(formatMultiselectStoredValue(next));
+                    return;
+                  }
+                  f.onChange(next);
+                }}
+                searchPlaceholder={`Search ${field.label.toLowerCase()}…`}
+              />
+            </FormControl>
+            <FieldError message={layoutError} />
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    );
+  }
+
   if (!formKey) {
-    if (field.type === "multiselect") {
-      return (
-        <FormField
-          control={control}
-          name={`customFields.${field.key}` as "customFields"}
-          render={({ field: f }) => (
-            <FormItem className={fieldItemClass(true)}>
-              <FormControl>
-                <MultiToggle
-                  label={field.label}
-                  options={options}
-                  value={Array.isArray(f.value) ? (f.value as string[]) : []}
-                  onChange={f.onChange}
-                  minSelected={field.required ? 1 : 0}
-                />
-              </FormControl>
-              <FieldError message={layoutError} />
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      );
-    }
     if (field.type === "boolean") {
       return (
         <FormField
@@ -338,9 +901,7 @@ function ApiFormField({
         name={`customFields.${field.key}` as "customFields"}
         render={({ field: f }) => (
           <FormItem
-            className={fieldItemClass(
-              field.type === "textarea" || field.type === "multiselect"
-            )}
+            className={fieldItemClass(field.type === "textarea")}
           >
             <FormLabel>
               {field.label}
@@ -366,15 +927,22 @@ function ApiFormField({
                 <Input
                   className="w-full"
                   type="number"
-                  value={f.value as number | undefined}
-                  onChange={(e) =>
-                    f.onChange(
-                      e.target.value === "" ? "" : Number(e.target.value)
-                    )
+                  min={0}
+                  value={
+                    typeof f.value === "number"
+                      ? f.value
+                      : f.value == null
+                        ? ""
+                        : Number(f.value) || ""
                   }
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    f.onChange(raw === "" ? 0 : Number(raw));
+                  }}
                 />
               ) : field.type === "select" ? (
                 <Select
+                  disabled={disabled}
                   onValueChange={f.onChange}
                   value={String(f.value ?? "")}
                 >
@@ -419,30 +987,6 @@ function ApiFormField({
     );
   }
 
-  if (field.type === "multiselect" || formKey === "boards" || formKey === "grades" || formKey === "roles") {
-    return (
-      <FormField
-        control={control}
-        name={formKey}
-        render={({ field: f }) => (
-          <FormItem className={fieldItemClass(true)}>
-            <FormControl>
-              <MultiToggle
-                label={field.label}
-                options={options}
-                value={(f.value as string[]) ?? []}
-                onChange={f.onChange}
-                minSelected={field.required ? 1 : 0}
-              />
-            </FormControl>
-            <FieldError message={layoutError} />
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-    );
-  }
-
   if (formKey === "status") {
     return (
       <FormField
@@ -471,7 +1015,7 @@ function ApiFormField({
     );
   }
 
-  if (field.type === "select" || formKey === "state" || formKey === "city" || formKey === "subject") {
+  if (field.type === "select" || formKey === "subject") {
     return (
       <FormField
         control={control}
@@ -490,14 +1034,6 @@ function ApiFormField({
             <Select
               onValueChange={(v) => {
                 f.onChange(v);
-                if (formKey === "state") {
-                  const cities = formOptions.citiesByState[v];
-                  if (cities?.length) {
-                    form.setValue("city", cities[0]!);
-                  } else {
-                    form.setValue("city", "");
-                  }
-                }
               }}
               value={
                 f.value && String(f.value).trim().length > 0
@@ -574,16 +1110,34 @@ function ApiFormField({
           <FormControl>
             <Input
               className="w-full"
-              {...f}
+              name={f.name}
+              ref={f.ref}
+              onBlur={f.onBlur}
               value={
                 typeof f.value === "number"
                   ? f.value
                   : String(f.value ?? "")
               }
+              onChange={(e) => {
+                let next = e.target.value;
+                if (formKey === "name") {
+                  next = next.replace(/[^a-zA-Z\s.'-]/g, "");
+                } else if (formKey === "mobile") {
+                  next = next.replace(/\D/g, "");
+                }
+                f.onChange(next);
+              }}
+              inputMode={
+                formKey === "mobile"
+                  ? "numeric"
+                  : formKey === "email"
+                    ? "email"
+                    : undefined
+              }
               type={
-                field.type === "email"
+                field.type === "email" || formKey === "email"
                   ? "email"
-                  : field.type === "tel"
+                  : field.type === "tel" || formKey === "mobile"
                     ? "tel"
                     : field.type === "number"
                       ? "number"
@@ -702,10 +1256,61 @@ export function TeacherFormDynamicSections({
   form,
   formOptions,
   layoutErrors = {},
+  isEditMode = false,
 }: TeacherFormDynamicSectionsProps) {
+  const selectedCountry = form.watch("country");
   const selectedState = form.watch("state");
+  const customFields = form.watch("customFields") ?? {};
+  const currentSalary = form.watch("currentSalary");
+  const showWorkDetails = shouldShowWorkDetailFields(
+    isEditMode,
+    customFields,
+    currentSalary
+  );
+  const showEmployed = shouldShowEmployedField();
+  const showSalary = shouldShowSalaryField(
+    isEditMode,
+    customFields,
+    currentSalary
+  );
+
+  useEffect(() => {
+    if (!isEditMode) return;
+    const prev = form.getValues("customFields") ?? {};
+    const next = employedValueFromSalary(currentSalary, customFields);
+    if (getEmployedValue(prev).toLowerCase() === next.toLowerCase()) return;
+    form.setValue(
+      "customFields",
+      { ...prev, [EMPLOYED_FIELD_KEY]: next },
+      { shouldDirty: false }
+    );
+  }, [isEditMode, currentSalary, customFields?.salary, form]);
   const skillsField = findSkillsField(config);
   let skillsRendered = false;
+
+  useEffect(() => {
+    if (!configHasWorkExperienceRows(config)) return;
+
+    if (!showWorkDetails) {
+      if (isEditMode) return;
+      const prev = form.getValues("customFields") ?? {};
+      form.setValue("customFields", {
+        ...prev,
+        salary: "",
+        total_years_experience: "",
+      });
+      form.setValue("currentSalary", 0);
+      form.setValue("experienceYears", 0);
+      if (form.getValues("workHistory").length > 0) {
+        form.setValue("workHistory", []);
+      }
+      return;
+    }
+
+    if (form.getValues("workHistory").length === 0) {
+      form.setValue("workHistory", [defaultWorkEntry()]);
+    }
+  }, [showWorkDetails, config, form, isEditMode]);
 
   if (config.sections.length === 0) {
     return (
@@ -726,12 +1331,22 @@ export function TeacherFormDynamicSections({
           !skillsRendered &&
           sectionWantsSkillsBlock(section);
 
+        const isWorkSection = isWorkExperienceSection(section);
+        const workMeta = isWorkSection
+          ? getWorkRepeatFieldMeta(section)
+          : null;
+
         const gridFields = section.fields.filter(
           (f) =>
             f.type !== "work_experience" &&
             !isExtraEducationField(f) &&
-            !isSkillsField(f)
+            !isSkillsField(f) &&
+            !(isWorkSection && isWorkRepeatFieldKey(f.key))
         );
+
+        const { countryField, stateField, cityField, anchor } =
+          findLocationFields(gridFields);
+        const showLocationCascade = anchor != null;
 
         if (showSkillsHere) {
           skillsRendered = true;
@@ -753,17 +1368,105 @@ export function TeacherFormDynamicSections({
                   ) : null}
                 </CardHeader>
                 <CardContent className={FIELD_GRID}>
-                  {gridFields.map((field) => (
-                    <ApiFormField
-                      key={field.id || field.key}
-                      field={field}
-                      control={form.control}
-                      form={form}
-                      formOptions={formOptions}
-                      selectedState={selectedState}
-                      layoutError={layoutErrors[field.key]}
-                    />
-                  ))}
+                  {(() => {
+                    const repeatOrders = section.fields
+                      .filter((f) => isWorkRepeatFieldKey(f.key))
+                      .map((f) => f.sortOrder ?? 999);
+                    const repeatMin =
+                      repeatOrders.length > 0
+                        ? Math.min(...repeatOrders)
+                        : null;
+                    const repeatMax =
+                      repeatOrders.length > 0
+                        ? Math.max(...repeatOrders)
+                        : null;
+
+                    const visibleInWorkSection = (field: ApiTeacherFormField) => {
+                      if (!isWorkSection) return true;
+                      if (field.key === EMPLOYED_FIELD_KEY) return showEmployed;
+                      if (isSalaryFieldKey(field.key)) return showSalary;
+                      if (
+                        !showWorkDetails &&
+                        isWorkDetailFieldKeyExcludingSalary(field.key)
+                      ) {
+                        return false;
+                      }
+                      return true;
+                    };
+
+                    const renderField = (field: ApiTeacherFormField) => {
+                      const employedLocked =
+                        isEditMode && field.key === EMPLOYED_FIELD_KEY;
+                      const formKey = apiFieldKeyToFormKey(field.key);
+                      if (
+                        showLocationCascade &&
+                        isLocationFormKey(formKey) &&
+                        field.key === anchor?.key
+                      ) {
+                        return (
+                          <LocationCascadeFields
+                            key="location-cascade"
+                            control={form.control}
+                            form={form}
+                            formOptions={formOptions}
+                            countryField={countryField}
+                            stateField={stateField}
+                            cityField={cityField}
+                            layoutErrors={layoutErrors}
+                            selectedCountry={selectedCountry}
+                          />
+                        );
+                      }
+                      if (showLocationCascade && isLocationFormKey(formKey)) {
+                        return null;
+                      }
+                      return (
+                        <ApiFormField
+                          key={field.id || field.key}
+                          field={field}
+                          control={form.control}
+                          form={form}
+                          formOptions={formOptions}
+                          selectedCountry={selectedCountry}
+                          selectedState={selectedState}
+                          layoutError={layoutErrors[field.key]}
+                          disabled={employedLocked}
+                        />
+                      );
+                    };
+
+                    const beforeWork = (
+                      isWorkSection && repeatMin != null
+                        ? gridFields.filter(
+                            (f) => (f.sortOrder ?? 0) < repeatMin
+                          )
+                        : gridFields
+                    ).filter(visibleInWorkSection);
+                    const afterWork = (
+                      isWorkSection && repeatMax != null
+                        ? gridFields.filter(
+                            (f) => (f.sortOrder ?? 0) > repeatMax
+                          )
+                        : []
+                    ).filter(visibleInWorkSection);
+
+                    return (
+                      <>
+                        {beforeWork.map((field) => renderField(field))}
+                        {showWorkDetails &&
+                        (workMeta?.school || workMeta?.from) ? (
+                          <WorkExperienceEntries
+                            form={form}
+                            control={form.control}
+                            meta={workMeta}
+                            formOptions={formOptions}
+                            layoutErrors={layoutErrors}
+                          />
+                        ) : null}
+                        {afterWork.map((field) => renderField(field))}
+                      </>
+                    );
+                  })()}
                   {extraField ? (
                     <ExtraEducationBlock
                       form={form}

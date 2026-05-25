@@ -1,13 +1,7 @@
 import type { Teacher, TeacherStatus, TeacherWorkExperience } from "@/types/teacher";
-import {
-  BOARDS,
-  CITIES,
-  GRADES,
-  ROLES,
-  SKILLS,
-  STATES,
-  SUBJECTS,
-} from "@/data/constants";
+import { BOARDS, GRADES, ROLES, SKILLS, SUBJECTS } from "@/data/constants";
+import { getCitiesForIndianState, getIndianStates } from "@/lib/india-locations";
+import { DEFAULT_COUNTRY_NAME } from "@/lib/locations";
 
 const firstNames = [
   "Aarav",
@@ -101,9 +95,9 @@ function buildWorkHistory(): TeacherWorkExperience[] {
 export function generateMockTeachers(count = 55): Teacher[] {
   const teachers: Teacher[] = [];
   for (let i = 1; i <= count; i++) {
-    const state = pick(STATES);
-    const cityList = CITIES[state] ?? ["Metro"];
-    const city = pick(cityList);
+    const state = pick(getIndianStates());
+    const cityList = getCitiesForIndianState(state);
+    const city = cityList.length ? pick(cityList) : "—";
     const fn = pick(firstNames);
     const ln = pick(lastNames);
     const subject = pick(SUBJECTS);
@@ -128,6 +122,7 @@ export function generateMockTeachers(count = 55): Teacher[] {
       mobile: `9${Math.floor(100000000 + Math.random() * 899999999)}`,
       city,
       state,
+      country: DEFAULT_COUNTRY_NAME,
       address: `${Math.floor(Math.random() * 200) + 1} ${pick(["Lake View", "Park Avenue", "Civil Lines"])} Rd`,
       ugCollege: pick(["St. Xavier", "Miranda", "Hansraj", "Christ University", "Fergusson"]),
       pgUniversity: pick(["IIT", "DU", "JNU", "TISS", "IGNOU", "State University"]),
