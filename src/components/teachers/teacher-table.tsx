@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 import {
   flexRender,
@@ -17,6 +18,7 @@ import {
 } from "@tanstack/react-table";
 import { Eye, Loader2, Pencil, Trash2, X } from "lucide-react";
 
+import { teacherEditPath, teacherProfilePath } from "@/lib/teacher-routes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -404,10 +406,11 @@ export function TeacherTable({
                 variant="outline"
                 size="icon"
                 className="h-8 w-8 rounded-full border-border bg-background shadow-sm"
-                onClick={() => onEdit(t)}
-                aria-label={`Edit ${t.name}`}
+                asChild
               >
-                <Pencil className="h-3.5 w-3.5" />
+                <Link href={teacherEditPath(t)} aria-label={`Edit ${t.name}`}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Link>
               </Button>
               <Button
                 type="button"
@@ -424,10 +427,11 @@ export function TeacherTable({
                 variant="outline"
                 size="icon"
                 className="h-8 w-8 rounded-full border-border bg-background shadow-sm"
-                onClick={() => onView(t)}
-                aria-label={`View ${t.name}`}
+                asChild
               >
-                <Eye className="h-3.5 w-3.5" />
+                <Link href={teacherProfilePath(t)} aria-label={`View ${t.name}`}>
+                  <Eye className="h-3.5 w-3.5" />
+                </Link>
               </Button>
             </div>
           );
