@@ -222,6 +222,8 @@ export type ListLookupFieldOptionsResult =
       ok: true;
       options: LookupFieldOption[];
       pagination: LookupFieldOptionsPagination;
+      /** Set when list is backed by GET /api/teacher-form (options can be PATCHed). */
+      teacherFormFieldKey?: string;
     }
   | { ok: false; message: string };
 

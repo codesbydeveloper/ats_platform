@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { LOOKUP_MENU_ITEMS } from "@/config/lookup-menu";
 import { useAuthStore } from "@/store/auth-store";
+import { useBrandingStore } from "@/store/branding-store";
 import { useFilterStore } from "@/store/filter-store";
 import { useUiStore } from "@/store/ui-store";
 
@@ -30,6 +31,7 @@ export function AppBrandHeader() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const branding = useBrandingStore((s) => s.branding);
   const search = useFilterStore((s) => s.filters.search);
   const setFilters = useFilterStore((s) => s.setFilters);
   const { setTheme } = useTheme();
@@ -60,7 +62,7 @@ export function AppBrandHeader() {
       ? `Theme: system (${effective === "dark" ? "dark" : "light"}). Click to change.`
       : `Theme: ${preference}. Click to change.`;
 
-  const accountLabel = "Tree Learning";
+  const accountLabel = branding.siteName?.trim() || "Tree Learning";
 
   return (
     <header className="sticky top-0 z-50 shrink-0 border-b border-border/70 bg-background shadow-[0_1px_0_rgba(15,23,42,0.04)]">
@@ -71,9 +73,13 @@ export function AppBrandHeader() {
           <Link
             href="/dashboard"
             className="flex shrink-0 items-center rounded-md outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            aria-label="Tree Learning home"
+            aria-label={`${accountLabel} home`}
           >
-            <BrandLogo variant="header" />
+            <BrandLogo
+              variant="header"
+              logoSrc={branding.loginLogoUrl}
+              alt={accountLabel}
+            />
           </Link>
         </div>
 

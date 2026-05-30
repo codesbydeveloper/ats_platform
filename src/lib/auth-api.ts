@@ -259,6 +259,95 @@ export async function changePasswordRequest(
   return { ok: true, data: { message } };
 }
 
+/** POST /api/auth/forgot-password — { email } */
+export async function forgotPasswordRequest(
+  email: string
+): Promise<ApiResult<{ message: string }>> {
+  const trimmed = email.trim();
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: trimmed }),
+    });
+  } catch {
+    return {
+      ok: false,
+      message: `Could not reach API at ${API_BASE}. Is the server running?`,
+    };
+  }
+
+  let data: Record<string, unknown> = {};
+  try {
+    const json = await res.json();
+    if (json && typeof json === "object" && !Array.isArray(json)) {
+      data = json as Record<string, unknown>;
+    }
+  } catch {
+    /* non-JSON */
+  }
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      message: apiErrorMessage(data, res.status, "Could not send reset code"),
+    };
+  }
+
+  const message =
+    (typeof data.message === "string" && data.message) ||
+    "If that email exists, a reset code has been sent.";
+  return { ok: true, data: { message } };
+}
+
+/** POST /api/auth/reset-password — { email, otp, new_password } */
+export async function resetPasswordRequest(input: {
+  email: string;
+  otp: string;
+  newPassword: string;
+}): Promise<ApiResult<{ message: string }>> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: input.email.trim(),
+        otp: input.otp.trim(),
+        new_password: input.newPassword,
+      }),
+    });
+  } catch {
+    return {
+      ok: false,
+      message: `Could not reach API at ${API_BASE}. Is the server running?`,
+    };
+  }
+
+  let data: Record<string, unknown> = {};
+  try {
+    const json = await res.json();
+    if (json && typeof json === "object" && !Array.isArray(json)) {
+      data = json as Record<string, unknown>;
+    }
+  } catch {
+    /* non-JSON */
+  }
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      message: apiErrorMessage(data, res.status, "Could not reset password"),
+    };
+  }
+
+  const message =
+    (typeof data.message === "string" && data.message) ||
+    "Password updated. You can sign in with your new password.";
+  return { ok: true, data: { message } };
+}
+
 /** POST /api/auth/logout — Authorization: Bearer <token> */
 export async function logoutRequest(accessToken: string): Promise<void> {
   try {

@@ -69,6 +69,7 @@ import {
   employedValueFromSalary,
 } from "@/lib/work-experience-form";
 import { createTeacherId, uid } from "@/utils/id";
+import { unwrapParseResumePayload } from "@/lib/parse-resume-to-form";
 
 export function teacherToFormValues(t: Teacher): TeacherFormValues {
   return {
@@ -269,6 +270,11 @@ export function TeacherFormDrawer({
   const [saving, setSaving] = useState(false);
   const [parsingResume, setParsingResume] = useState(false);
   const [uploadingResume, setUploadingResume] = useState(false);
+  const [aiParsedLocation, setAiParsedLocation] = useState<{
+    country?: string;
+    state?: string;
+    city?: string;
+  } | null>(null);
   const [formConfig, setFormConfig] = useState<ApiTeacherFormConfig>({
     sections: [],
   });
@@ -287,6 +293,7 @@ export function TeacherFormDrawer({
   useEffect(() => {
     if (!open) return;
     resumeFileRef.current = null;
+    setAiParsedLocation(null);
     if (mode === "edit" && teacher) {
       const values = teacherToFormValues(teacher);
       const employed = employedValueFromSalary(
@@ -348,16 +355,93 @@ export function TeacherFormDrawer({
 
   const selectedCountry = useWatch({ control: form.control, name: "country" });
   const selectedState = useWatch({ control: form.control, name: "state" });
+  const selectedCity = useWatch({ control: form.control, name: "city" });
+
+  const debugLocation =
+    typeof window !== "undefined" &&
+    Boolean((window as unknown as { __ATS_DEBUG_LOCATION__?: boolean }).__ATS_DEBUG_LOCATION__);
+  const dlog = (...args: unknown[]) => {
+    if (!debugLocation) return;
+    // eslint-disable-next-line no-console
+    console.log("[teacher-form][location]", ...args);
+  };
+
+  const aiCityMissing =
+    aiParsedLocation != null && !(aiParsedLocation.city ?? "").trim();
+
+  const normalizeOptionKey = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[\s._-]+/g, "")
+      .replace(/[^a-z]/g, "");
+
+  const fuzzyMatchOption = (value: string, options: string[]): string | null => {
+    const v = value.trim();
+    if (!v) return null;
+    const direct = options.find((o) => o.trim().toLowerCase() === v.toLowerCase());
+    if (direct) return direct;
+    const key = normalizeOptionKey(v);
+    if (!key) return null;
+    const matched = options.find((o) => normalizeOptionKey(o) === key);
+    return matched ?? null;
+  };
+
+  const inferStateFromCity = (
+    country: string,
+    city: string
+  ): { state: string; city: string } | null => {
+    const desiredCity = city.trim();
+    if (!desiredCity) return null;
+    const states = getStateNamesForCountry(country);
+    for (const s of states) {
+      const cities = getCityNamesForState(country, s);
+      if (!cities.length) continue;
+      const matchedCity = fuzzyMatchOption(desiredCity, cities);
+      if (matchedCity) return { state: s, city: matchedCity };
+    }
+    return null;
+  };
 
   useEffect(() => {
     if (!open || !selectedCountry?.trim()) return;
     const states = getStateNamesForCountry(selectedCountry);
     if (!states.length) return;
     const currentState = form.getValues("state");
-    if (!currentState || !states.includes(currentState)) {
+    const currentCity = form.getValues("city");
+
+    // After AI parse: if AI did not provide a state, do not default to a random one.
+    if (aiParsedLocation && !(aiParsedLocation.state ?? "").trim()) {
+      return;
+    }
+
+    // Only auto-set when blank; otherwise keep AI/manual values.
+    if (!currentState || !currentState.trim()) {
       const nextState = states[0]!;
-      form.setValue("state", nextState);
-      form.setValue("city", getDefaultCityForState(selectedCountry, nextState));
+      form.setValue("state", nextState, { shouldDirty: false });
+      if (!currentCity?.trim() && !aiParsedLocation?.city?.trim()) {
+        form.setValue(
+          "city",
+          getDefaultCityForState(selectedCountry, nextState),
+          { shouldDirty: false }
+        );
+      }
+      return;
+    }
+
+    // If state isn't in the list, try to normalize it (e.g., "U.P" -> "Uttar Pradesh")
+    if (!states.includes(currentState)) {
+      const matched = fuzzyMatchOption(currentState, states);
+      if (matched && matched !== currentState) {
+        form.setValue("state", matched, { shouldDirty: false });
+      }
+      // Do not overwrite city if it is already set (even if not in the list).
+      if (!currentCity?.trim()) {
+        if (aiParsedLocation?.city?.trim()) return;
+        const next = matched ?? states[0]!;
+        form.setValue("city", getDefaultCityForState(selectedCountry, next), {
+          shouldDirty: false,
+        });
+      }
     }
   }, [open, selectedCountry, form]);
 
@@ -368,16 +452,64 @@ export function TeacherFormDrawer({
       const fallback = formOptions.citiesByState[selectedState];
       if (!fallback?.length) return;
       const currentCity = form.getValues("city");
-      if (!currentCity || !fallback.includes(currentCity)) {
-        form.setValue("city", fallback[0]!);
+      // Only auto-set when blank; otherwise keep AI/manual values.
+      if (!currentCity || !currentCity.trim()) {
+        form.setValue("city", fallback[0]!, { shouldDirty: false });
+      } else if (!fallback.includes(currentCity)) {
+        const matched = fuzzyMatchOption(currentCity, fallback);
+        if (matched && matched !== currentCity) {
+          form.setValue("city", matched, { shouldDirty: false });
+        }
       }
       return;
     }
     const currentCity = form.getValues("city");
-    if (!currentCity || !cities.includes(currentCity)) {
-      form.setValue("city", cities[0]!);
+    // Only auto-set when blank; otherwise keep AI/manual values.
+    if (!currentCity || !currentCity.trim()) {
+      // Only default city when AI parse did not provide a city.
+      if (aiParsedLocation && !aiCityMissing) return;
+      form.setValue("city", cities[0]!, { shouldDirty: false });
+      return;
+    }
+    if (!cities.includes(currentCity)) {
+      const matched = fuzzyMatchOption(currentCity, cities);
+      if (matched && matched !== currentCity) {
+        form.setValue("city", matched, { shouldDirty: false });
+      }
     }
   }, [open, selectedCountry, selectedState, formOptions, form]);
+
+  useEffect(() => {
+    if (!open) return;
+    const parsedCity = aiParsedLocation?.city?.trim() ?? "";
+    if (!parsedCity) return;
+
+    // Don't fight the user: if they changed city manually, leave it.
+    const cityDirty = Boolean(form.formState.dirtyFields?.city);
+    if (cityDirty) return;
+
+    const currentCity = String(selectedCity ?? "").trim();
+    if (currentCity.toLowerCase() === parsedCity.toLowerCase()) return;
+
+    const parsedState = aiParsedLocation?.state?.trim() ?? "";
+    const currentState = String(selectedState ?? "").trim();
+    if (parsedState && currentState) {
+      const stateKey = normalizeOptionKey(parsedState);
+      const currentKey = normalizeOptionKey(currentState);
+      if (stateKey && currentKey && stateKey !== currentKey) {
+        return;
+      }
+    }
+
+    dlog("restore city from AI", {
+      parsedCity,
+      selectedCountry,
+      selectedState,
+      currentCity,
+      dirty: form.formState.dirtyFields?.city,
+    });
+    form.setValue("city", parsedCity, { shouldDirty: false });
+  }, [open, aiParsedLocation, selectedCity, selectedState, form]);
 
   const isDirty = form.formState.isDirty;
   const resumeFileName = useWatch({
@@ -484,6 +616,10 @@ export function TeacherFormDrawer({
       }
 
       const patch = parsedResumeToFormPatch(result.data);
+      dlog("parse-resume raw -> patch", {
+        raw: unwrapParseResumePayload(result.data),
+        patch,
+      });
       const keys = Object.keys(patch) as (keyof TeacherFormValues)[];
       if (keys.length === 0) {
         toast.message("No fields extracted", {
@@ -493,6 +629,11 @@ export function TeacherFormDrawer({
       }
 
       const current = form.getValues();
+      dlog("before reset form values", {
+        country: current.country,
+        state: current.state,
+        city: current.city,
+      });
       form.reset(
         {
           ...current,
@@ -504,6 +645,85 @@ export function TeacherFormDrawer({
         },
         { keepDirty: true, keepDefaultValues: false }
       );
+
+      // Keep AI location values stable even if the state/city lists are still loading.
+      // Important: we also record "missing" city (blank/undefined) so we can default city only in that case.
+      const raw = unwrapParseResumePayload(result.data);
+      const rawCountry =
+        raw && typeof raw.country === "string" ? raw.country : undefined;
+      const rawState = raw && typeof raw.state === "string" ? raw.state : undefined;
+      const rawCity = raw && typeof raw.city === "string" ? raw.city : "";
+
+      const desiredCountry =
+        typeof patch.country === "string" ? patch.country : rawCountry ?? "";
+      const desiredState =
+        typeof patch.state === "string" ? patch.state : rawState ?? "";
+      const desiredCity =
+        typeof patch.city === "string" ? patch.city : rawCity ?? "";
+
+      setAiParsedLocation({
+        country: desiredCountry || undefined,
+        state: desiredState || undefined,
+        city: desiredCity,
+      });
+
+      // Snap AI values to exact dropdown options when possible (so Select shows a real option).
+      if (desiredCountry.trim()) {
+        const states = getStateNamesForCountry(desiredCountry);
+        // If state missing but city present, infer the correct state from city.
+        const inferred =
+          !desiredState.trim() && desiredCity.trim()
+            ? inferStateFromCity(desiredCountry, desiredCity)
+            : null;
+        const stateSource = inferred?.state ?? desiredState;
+        const citySource = inferred?.city ?? desiredCity;
+
+        const matchedState = stateSource.trim()
+          ? fuzzyMatchOption(stateSource, states) ?? stateSource
+          : "";
+
+        if (!matchedState) {
+          // AI didn't provide a usable state, so keep state/city unselected.
+          dlog("no state from AI; clearing state/city", {
+            desiredCountry,
+            desiredState,
+            desiredCity,
+          });
+          form.setValue("state", "", { shouldDirty: false });
+          form.setValue("city", "", { shouldDirty: false });
+        } else {
+          const prevState = form.getValues("state");
+          dlog("snap state", { desiredState: stateSource, matchedState, prevState });
+          if (matchedState !== prevState) {
+            form.setValue("state", matchedState, { shouldDirty: false });
+          }
+
+          if (citySource.trim()) {
+            const cities = getCityNamesForState(desiredCountry, matchedState);
+            const matchedCity = fuzzyMatchOption(citySource, cities) ?? citySource;
+            if (matchedCity) {
+              const prevCity = form.getValues("city");
+              dlog("snap city", {
+                desiredCity: citySource,
+                matchedCity,
+                prevCity,
+                citiesCount: cities.length,
+                hasExact: cities.includes(matchedCity),
+              });
+              // Force-apply AI city even if reset kept a dirty/auto value.
+              if (matchedCity !== prevCity) {
+                form.setValue("city", matchedCity, { shouldDirty: false });
+              }
+            }
+          }
+        }
+      }
+
+      dlog("after parse+snap form values", {
+        country: form.getValues("country"),
+        state: form.getValues("state"),
+        city: form.getValues("city"),
+      });
 
       const workCount = patch.workHistory?.length ?? 0;
       toast.success("AI filled the form", {

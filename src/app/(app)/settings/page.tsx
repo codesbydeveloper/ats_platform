@@ -3,8 +3,11 @@
 import { useTheme } from "next-themes";
 import { Monitor, Moon, Palette, Sun } from "lucide-react";
 
+import { BrandingSettingsCard } from "@/components/settings/branding-settings-card";
 import { ChangePasswordCard } from "@/components/settings/change-password-card";
+import { OpenAiSettingsCard } from "@/components/settings/openai-settings-card";
 import { ProfileSettingsCard } from "@/components/settings/profile-settings-card";
+import { SmtpSettingsCard } from "@/components/settings/smtp-settings-card";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +28,9 @@ const themeOptions: { value: ThemePreference; label: string; icon: typeof Sun }[
 const SECTION_LINKS = [
   { href: "#profile", label: "Profile" },
   { href: "#change-password", label: "Change password" },
+  { href: "#branding", label: "Branding" },
+  { href: "#openai", label: "OpenAI" },
+  { href: "#smtp", label: "SMTP" },
   { href: "#theme", label: "Theme" },
 ] as const;
 
@@ -44,7 +50,7 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-3xl space-y-8 pb-12">
       <PageHeader
         title="Settings"
-        description="Edit your profile, change your password, and pick a theme."
+        description="Profile, login branding, integrations, password, and theme."
       >
         <nav
           className="flex flex-wrap gap-2"
@@ -64,6 +70,18 @@ export default function SettingsPage() {
 
       <section id="change-password" className={sectionScrollClass}>
         <ChangePasswordCard />
+      </section>
+
+      <section id="branding" className={sectionScrollClass}>
+        <BrandingSettingsCard />
+      </section>
+
+      <section id="openai" className={sectionScrollClass}>
+        <OpenAiSettingsCard />
+      </section>
+
+      <section id="smtp" className={sectionScrollClass}>
+        <SmtpSettingsCard />
       </section>
 
       <section id="theme" className={sectionScrollClass}>

@@ -81,184 +81,49 @@ function fieldItemClass(fullWidth = false) {
   return cn("w-full min-w-0", fullWidth && "sm:col-span-2");
 }
 
-function isLocationFormKey(formKey: string | null): boolean {
-  return (
-    formKey === "country" || formKey === "state" || formKey === "city"
-  );
-}
-
-function findLocationFields(fields: ApiTeacherFormField[]) {
-  const countryField = fields.find(
-    (f) => apiFieldKeyToFormKey(f.key) === "country"
-  );
-  const stateField = fields.find((f) => apiFieldKeyToFormKey(f.key) === "state");
-  const cityField = fields.find((f) => apiFieldKeyToFormKey(f.key) === "city");
-  const ordered = [countryField, stateField, cityField].filter(
-    (f): f is ApiTeacherFormField => f != null
-  );
-  const anchor = [...ordered].sort(
+function sortFieldsByApiOrder(fields: ApiTeacherFormField[]): ApiTeacherFormField[] {
+  return [...fields].sort(
     (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
-  )[0];
-  return { countryField, stateField, cityField, anchor };
+  );
 }
 
-function LocationCascadeFields({
-  control,
-  form,
-  formOptions,
-  countryField,
-  stateField,
-  cityField,
-  layoutErrors,
-  selectedCountry,
-}: {
-  control: Control<TeacherFormValues>;
-  form: UseFormReturn<TeacherFormValues>;
-  formOptions: TeacherFormOptionsMap;
-  countryField?: ApiTeacherFormField;
-  stateField?: ApiTeacherFormField;
-  cityField?: ApiTeacherFormField;
-  layoutErrors: Record<string, string>;
-  selectedCountry?: string;
-}) {
-  const selectedState = form.watch("state");
-  const locationCtx = { selectedCountry, selectedState };
+function isLocationFormKey(formKey: string | null): boolean {
+  return formKey === "country" || formKey === "state" || formKey === "city";
+}
 
-  const countryOptions = countryField
-    ? resolveFieldOptions(
-        { ...countryField, type: "select" },
-        formOptions,
-        locationCtx
-      )
-    : [];
-  const stateOptions =
-    stateField && selectedCountry?.trim()
-    ? resolveFieldOptions(
-        { ...stateField, key: "state", type: "select" },
-        formOptions,
-        locationCtx
-      )
-    : [];
-  const cityOptions =
-    cityField && selectedCountry?.trim() && selectedState?.trim()
-      ? resolveFieldOptions(
-          { ...cityField, key: "city", type: "select" },
-          formOptions,
-          locationCtx
-        )
-      : [];
+function applyLocationCascade(
+  form: UseFormReturn<TeacherFormValues>,
+  formKey: string,
+  value: string
+) {
+  if (formKey === "country") {
+    // Don't auto-pick a city; let AI/user decide.
+    form.setValue("state", "");
+    form.setValue("city", "");
+    return;
+  }
+  if (formKey === "state") {
+    const country = form.getValues("country");
+    if (!country?.trim()) return;
+    // Don't auto-pick a city; user should choose after picking a state.
+    form.setValue("city", "");
+  }
+}
 
-  const renderSelect = (
-    name: "country" | "state" | "city",
-    label: string,
-    options: string[],
-    emptyHint: string,
-    apiField: ApiTeacherFormField | undefined,
-    onChangeExtra?: (value: string) => void
-  ) => {
-    if (!apiField) return null;
-    const errorKey = apiField.key;
-    return (
-    <FormField
-      control={control}
-      name={name}
-      render={({ field: f }) => (
-        <FormItem className={fieldItemClass()}>
-          <FormLabel>
-            {label}
-            {apiField.required ? (
-              <span className="text-destructive" aria-hidden>
-                {" "}
-                *
-              </span>
-            ) : null}
-          </FormLabel>
-          <Select
-            onValueChange={(v) => {
-              f.onChange(v);
-              onChangeExtra?.(v);
-            }}
-            value={
-              f.value && String(f.value).trim().length > 0
-                ? String(f.value)
-                : undefined
-            }
-          >
-            <FormControl>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={`Select ${label}`} />
-              </SelectTrigger>
-            </FormControl>
-            <SelectContent className="z-[200]">
-              {options.length === 0 ? (
-                <div className="px-2 py-3 text-sm text-muted-foreground">
-                  {emptyHint}
-                </div>
-              ) : (
-                options.map((o) => (
-                  <SelectItem key={o} value={o}>
-                    {o}
-                  </SelectItem>
-                ))
-              )}
-            </SelectContent>
-          </Select>
-          <FieldError message={layoutErrors[errorKey]} />
-          <FormMessage />
-        </FormItem>
-      )}
-    />
-    );
-  };
-
-  const cols =
-    [countryField, stateField, cityField].filter(Boolean).length || 1;
-
-  return (
-    <div
-      className={cn(
-        "grid w-full min-w-0 gap-4 sm:col-span-2",
-        cols === 3 && "grid-cols-1 sm:grid-cols-3",
-        cols === 2 && "grid-cols-1 sm:grid-cols-2",
-        cols === 1 && "grid-cols-1"
-      )}
-    >
-      {renderSelect(
-        "country",
-        countryField?.label ?? "Country",
-        countryOptions,
-        "No countries available",
-        countryField,
-        (v) => {
-          const states = getStateNamesForCountry(v);
-          const nextState = states[0] ?? "";
-          form.setValue("state", nextState);
-          const cities = nextState ? getCityNamesForState(v, nextState) : [];
-          form.setValue("city", cities[0] ?? "");
-        }
-      )}
-      {renderSelect(
-        "state",
-        stateField?.label ?? "State",
-        stateOptions,
-        "Select a country first",
-        stateField,
-        (v) => {
-          const country = form.getValues("country");
-          if (!country) return;
-          const cities = getCityNamesForState(country, v);
-          form.setValue("city", cities[0] ?? "");
-        }
-      )}
-      {renderSelect(
-        "city",
-        cityField?.label ?? "City",
-        cityOptions,
-        "Select a state first",
-        cityField
-      )}
-    </div>
-  );
+function locationSelectEmptyHint(
+  formKey: string | null,
+  options: string[],
+  selectedCountry?: string,
+  selectedState?: string
+): string {
+  if (options.length > 0) return "";
+  if (formKey === "state" && !selectedCountry?.trim()) {
+    return "Select a country first";
+  }
+  if (formKey === "city" && !selectedState?.trim()) {
+    return "Select a state first";
+  }
+  return "No options available";
 }
 
 function isExtraEducationField(field: ApiTeacherFormField): boolean {
@@ -543,7 +408,13 @@ function WorkExperienceEntries({
                             hideLabel
                             label={roleField.label}
                             placeholder={`Select ${roleField.label.toLowerCase()}…`}
-                            options={roleOptions}
+                            options={(() => {
+                              const out = [...roleOptions];
+                              for (const v of selected) {
+                                if (v && !out.includes(v)) out.unshift(v);
+                              }
+                              return out;
+                            })()}
                             selected={selected}
                             onChange={(next) =>
                               f.onChange(
@@ -799,10 +670,20 @@ function ApiFormField({
     selectedState,
   });
   const formKey = apiFieldKeyToFormKey(field.key);
-
-  if (formKey === "country" || formKey === "state" || formKey === "city") {
-    return null;
-  }
+  const selectOptionsWithCurrent = (value: unknown) => {
+    const current = String(value ?? "").trim();
+    if (!current) return options;
+    return options.includes(current) ? options : [current, ...options];
+  };
+  const multiselectOptionsWithSelected = (selected: string[]) => {
+    if (!selected.length) return options;
+    const out = [...options];
+    for (const v of selected) {
+      const t = String(v ?? "").trim();
+      if (t && !out.includes(t)) out.unshift(t);
+    }
+    return out;
+  };
 
   if (field.type === "work_experience") return null;
   if (formKey === "extraEducation" || isExtraEducationField(field)) return null;
@@ -839,14 +720,20 @@ function ApiFormField({
               <SearchableMultiSelect
                 hideLabel
                 label={field.label}
-                options={options}
-                selected={
-                  arrayFormKey
-                    ? Array.isArray(f.value)
-                      ? (f.value as string[])
-                      : []
-                    : parseMultiselectStoredValue(f.value)
-                }
+                selected={(() => {
+                  if (arrayFormKey) {
+                    return Array.isArray(f.value) ? (f.value as string[]) : [];
+                  }
+                  return parseMultiselectStoredValue(f.value);
+                })()}
+                options={multiselectOptionsWithSelected(
+                  (() => {
+                    if (arrayFormKey) {
+                      return Array.isArray(f.value) ? (f.value as string[]) : [];
+                    }
+                    return parseMultiselectStoredValue(f.value);
+                  })()
+                )}
                 onChange={(next) => {
                   if (arrayFormKey) {
                     f.onChange(next);
@@ -952,7 +839,7 @@ function ApiFormField({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {options.map((o) => (
+                    {selectOptionsWithCurrent(f.value).map((o) => (
                       <SelectItem key={o} value={o}>
                         {o}
                       </SelectItem>
@@ -1015,7 +902,19 @@ function ApiFormField({
     );
   }
 
-  if (field.type === "select" || formKey === "subject") {
+  const locationField = formKey != null && isLocationFormKey(formKey);
+
+  if (field.type === "select" || formKey === "subject" || locationField) {
+    const emptyHint =
+      locationField
+        ? locationSelectEmptyHint(
+            formKey,
+            options,
+            selectedCountry,
+            selectedState
+          )
+        : "No options — add them under Filter lists";
+
     return (
       <FormField
         control={control}
@@ -1032,8 +931,12 @@ function ApiFormField({
               ) : null}
             </FormLabel>
             <Select
+              disabled={disabled}
               onValueChange={(v) => {
                 f.onChange(v);
+                if (formKey && isLocationFormKey(formKey)) {
+                  applyLocationCascade(form, formKey, v);
+                }
               }}
               value={
                 f.value && String(f.value).trim().length > 0
@@ -1047,12 +950,12 @@ function ApiFormField({
                 </SelectTrigger>
               </FormControl>
               <SelectContent className="z-[200]">
-                {options.length === 0 ? (
+                {selectOptionsWithCurrent(f.value).length === 0 ? (
                   <div className="px-2 py-3 text-sm text-muted-foreground">
-                    No options — add them under Filter lists
+                    {emptyHint}
                   </div>
                 ) : (
-                  options.map((o) => (
+                  selectOptionsWithCurrent(f.value).map((o) => (
                     <SelectItem key={o} value={o}>
                       {o}
                     </SelectItem>
@@ -1068,7 +971,7 @@ function ApiFormField({
     );
   }
 
-  if (field.type === "textarea" || formKey === "address" || formKey === "notes") {
+  if (field.type === "textarea" || formKey === "notes") {
     return (
       <FormField
         control={control}
@@ -1123,7 +1026,19 @@ function ApiFormField({
                 if (formKey === "name") {
                   next = next.replace(/[^a-zA-Z\s.'-]/g, "");
                 } else if (formKey === "mobile") {
-                  next = next.replace(/\D/g, "");
+                  let digits = next.replace(/\D/g, "");
+                  const country = String(form.getValues("country") ?? "").trim();
+                  if (country.toLowerCase() === "india") {
+                    if (digits.length >= 12 && digits.startsWith("91")) {
+                      digits = digits.slice(2);
+                    } else if (digits.length === 11 && digits.startsWith("0")) {
+                      digits = digits.slice(1);
+                    }
+                    if (digits.length > 10) {
+                      digits = digits.slice(-10);
+                    }
+                  }
+                  next = digits;
                 }
                 f.onChange(next);
               }}
@@ -1336,17 +1251,15 @@ export function TeacherFormDynamicSections({
           ? getWorkRepeatFieldMeta(section)
           : null;
 
-        const gridFields = section.fields.filter(
-          (f) =>
-            f.type !== "work_experience" &&
-            !isExtraEducationField(f) &&
-            !isSkillsField(f) &&
-            !(isWorkSection && isWorkRepeatFieldKey(f.key))
+        const gridFields = sortFieldsByApiOrder(
+          section.fields.filter(
+            (f) =>
+              f.type !== "work_experience" &&
+              !isExtraEducationField(f) &&
+              !isSkillsField(f) &&
+              !(isWorkSection && isWorkRepeatFieldKey(f.key))
+          )
         );
-
-        const { countryField, stateField, cityField, anchor } =
-          findLocationFields(gridFields);
-        const showLocationCascade = anchor != null;
 
         if (showSkillsHere) {
           skillsRendered = true;
@@ -1397,29 +1310,6 @@ export function TeacherFormDynamicSections({
                     const renderField = (field: ApiTeacherFormField) => {
                       const employedLocked =
                         isEditMode && field.key === EMPLOYED_FIELD_KEY;
-                      const formKey = apiFieldKeyToFormKey(field.key);
-                      if (
-                        showLocationCascade &&
-                        isLocationFormKey(formKey) &&
-                        field.key === anchor?.key
-                      ) {
-                        return (
-                          <LocationCascadeFields
-                            key="location-cascade"
-                            control={form.control}
-                            form={form}
-                            formOptions={formOptions}
-                            countryField={countryField}
-                            stateField={stateField}
-                            cityField={cityField}
-                            layoutErrors={layoutErrors}
-                            selectedCountry={selectedCountry}
-                          />
-                        );
-                      }
-                      if (showLocationCascade && isLocationFormKey(formKey)) {
-                        return null;
-                      }
                       return (
                         <ApiFormField
                           key={field.id || field.key}
@@ -1435,20 +1325,22 @@ export function TeacherFormDynamicSections({
                       );
                     };
 
-                    const beforeWork = (
-                      isWorkSection && repeatMin != null
+                    const beforeWork = sortFieldsByApiOrder(
+                      (isWorkSection && repeatMin != null
                         ? gridFields.filter(
                             (f) => (f.sortOrder ?? 0) < repeatMin
                           )
                         : gridFields
-                    ).filter(visibleInWorkSection);
-                    const afterWork = (
-                      isWorkSection && repeatMax != null
+                      ).filter(visibleInWorkSection)
+                    );
+                    const afterWork = sortFieldsByApiOrder(
+                      (isWorkSection && repeatMax != null
                         ? gridFields.filter(
                             (f) => (f.sortOrder ?? 0) > repeatMax
                           )
                         : []
-                    ).filter(visibleInWorkSection);
+                      ).filter(visibleInWorkSection)
+                    );
 
                     return (
                       <>

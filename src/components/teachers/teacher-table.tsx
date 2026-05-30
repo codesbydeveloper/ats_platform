@@ -535,13 +535,13 @@ export function TeacherTable({
       >
         <div className="max-h-[min(70vh,720px)] overflow-auto">
           <Table>
-            <TableHeader className="sticky top-0 z-20 bg-[#1a6b7a] [&_tr]:border-[#155a66] [&_tr]:hover:bg-[#1a6b7a]">
+            <TableHeader className="sticky top-0 z-20 bg-[#3F845B] [&_tr]:border-[#356b47] [&_tr]:hover:bg-[#3F845B]">
               {table.getHeaderGroups().map((hg) => (
                 <TableRow key={hg.id}>
                   {hg.headers.map((header) => (
                     <TableHead
                       key={header.id}
-                      className="whitespace-nowrap border-[#155a66] bg-[#1a6b7a] font-semibold text-white"
+                      className="whitespace-nowrap border-[#356b47] bg-[#3F845B] font-semibold text-white"
                     >
                       {header.isPlaceholder
                         ? null

@@ -334,6 +334,34 @@ function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
   return "";
 }
 
+function pickText(r: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = r[k];
+    if (v == null) continue;
+    if (typeof v === "string" && v.trim().length > 0) return v.trim();
+    if (typeof v === "number" && !Number.isNaN(v)) return String(v);
+    if (Array.isArray(v)) {
+      const first = v
+        .map((x) => (typeof x === "string" ? x.trim() : x))
+        .find((x) => typeof x === "string" ? x.length > 0 : x != null);
+      if (typeof first === "string" && first.trim().length > 0) return first.trim();
+      if (typeof first === "number" && !Number.isNaN(first)) return String(first);
+    }
+  }
+  return "";
+}
+
+function normalizeIndianMobile(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  // Common cases: +91XXXXXXXXXX / 91XXXXXXXXXX / 0XXXXXXXXXX
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith("0")) return digits.slice(1);
+  // If extra digits are present (e.g. formatting mistakes), keep last 10.
+  if (digits.length > 10) return digits.slice(-10);
+  return digits;
+}
+
 function asNum(v: unknown, fallback = 0): number {
   if (typeof v === "number" && !Number.isNaN(v)) return v;
   if (typeof v === "string" && v.trim() !== "") {
@@ -410,6 +438,8 @@ function mapWorkExpItem(
     w,
     "school_name",
     "schoolName",
+    "school_organization",
+    "schoolOrganization",
     "school",
     "organization",
     "organization_name",
@@ -431,14 +461,25 @@ function mapWorkExpItem(
     schoolName: school,
     role: role,
     from:
-      pickStr(w, "from", "from_date", "start_date") ||
+      pickStr(
+        w,
+        "from",
+        "from_date",
+        "start_date",
+        "duration_from",
+        "durationFrom"
+      ) ||
       new Date().toISOString().slice(0, 10),
     to:
       typeof w.to === "string"
         ? w.to
         : w.to_date != null
           ? String(w.to_date)
-          : null,
+          : w.duration_to != null
+            ? String(w.duration_to)
+            : w.durationTo != null
+              ? String(w.durationTo)
+              : null,
     currentlyWorking: Boolean(
       w.currently_working ??
         w.currentlyWorking ??
@@ -473,7 +514,7 @@ export function mapApiRowToTeacher(row: unknown): Teacher | null {
     teacherCode: teacherCode || null,
     name: pickStr(r, "name", "full_name", "fullName") || "",
     email: pickStr(r, "email") || "",
-    mobile: pickStr(r, "mobile", "phone") || "",
+    mobile: normalizeIndianMobile(pickStr(r, "mobile", "phone") || ""),
     city: pickStr(r, "city") || "",
     state: pickStr(r, "state") || "",
     country: pickStr(r, "country") || "India",
@@ -482,8 +523,12 @@ export function mapApiRowToTeacher(row: unknown): Teacher | null {
       pickStr(r, "ug_college", "ugCollege", "college_attended_ug") || "",
     pgUniversity: pickStr(r, "pg_university", "pgUniversity") || "",
     qualification:
-      pickStr(r, "qualification", "educational_qualifications") || "",
-    certifications: pickStr(r, "certifications") || "",
+      mergeApiStringArrays(
+        r.qualification,
+        r.educational_qualifications,
+        r.educationalQualifications
+      ).join(", ") || "",
+    certifications: mergeApiStringArrays(r.certifications).join(", ") || "",
     extraEducation: asStrArr(
       r.additional_education ?? r.education_extras ?? r.extra_education
     ),
@@ -497,17 +542,19 @@ export function mapApiRowToTeacher(row: unknown): Teacher | null {
     grades: mergeApiStringArrays(r.grades_taught, r.grades),
     roles: mergeApiStringArrays(r.teacher_roles, r.roles),
     currentLocation:
-      pickStr(r, "current_location", "currentLocation") ||
+      pickText(r, "current_location", "currentLocation") ||
       pickStr(r, "city") ||
       "",
     preferredLocation:
-      pickStr(r, "preferred_location", "preferredLocation") || "",
+      pickText(r, "preferred_location", "preferredLocation") || "",
     areaOfInterest:
       mergeApiStringArrays(r.area_of_interest, r.areaOfInterest).join(", ") ||
       "",
     currentSalary: asNum(r.current_salary ?? r.currentSalary, 0),
     experienceYears: asNum(
       r.total_experience ??
+        r.total_years_experience ??
+        r.totalYearsExperience ??
         r.experience_years ??
         r.experienceYears,
       0

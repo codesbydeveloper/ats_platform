@@ -1,12 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Filter, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PageHeader } from "@/components/shared/page-header";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -27,24 +26,21 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { SortableFieldList } from "@/components/form-builder/sortable-field-list";
 import {
   createTeacherFormFieldRequest,
   createTeacherFormSectionRequest,
   deleteTeacherFormFieldRequest,
   deleteTeacherFormSectionRequest,
   getTeacherFormRequest,
-  isFieldFilterEnabled,
+  reorderTeacherFormFieldsRequest,
   updateTeacherFormFieldRequest,
   updateTeacherFormSectionRequest,
 } from "@/lib/teacher-form-api";
 import { useAuthStore } from "@/store/auth-store";
 import type {
   ApiTeacherFormConfig,
+  ApiTeacherFormField,
   ApiTeacherFormFieldType,
   ApiTeacherFormSection,
 } from "@/types/teacher-form-api";
@@ -221,6 +217,57 @@ export function TeacherFormManager() {
     void reload();
   };
 
+  const openFieldEdit = (field: ApiTeacherFormField, sectionId: string) => {
+    setFieldDialog({
+      mode: "edit",
+      sectionId,
+      fieldKey: field.key,
+    });
+    setFieldLabel(field.label);
+    setFieldKey(field.key);
+    setFieldType(field.type);
+    setFieldRequired(!!field.required);
+    setFieldOptions((field.options ?? []).join(", "));
+  };
+
+  const reorderFields = async (sectionId: string, orderedKeys: string[]) => {
+    if (!accessToken) return;
+
+    const section = config.sections.find((s) => s.id === sectionId);
+    if (!section) return;
+
+    const byKey = new Map(section.fields.map((f) => [f.key, f]));
+    const reorderedFields = orderedKeys
+      .map((key) => byKey.get(key))
+      .filter((f): f is ApiTeacherFormField => f != null);
+
+    if (reorderedFields.length !== section.fields.length) return;
+
+    setConfig((prev) => ({
+      ...prev,
+      sections: prev.sections.map((s) =>
+        s.id === sectionId ? { ...s, fields: reorderedFields } : s
+      ),
+    }));
+
+    setBusy(true);
+    const result = await reorderTeacherFormFieldsRequest(accessToken, {
+      [sectionId]: orderedKeys,
+    });
+    setBusy(false);
+
+    if (!result.ok) {
+      toast.error("Could not save field order", {
+        description: result.message,
+      });
+      void reload();
+      return;
+    }
+
+    setConfig(result.data);
+    toast.success("Field order saved");
+  };
+
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -287,89 +334,23 @@ export function TeacherFormManager() {
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              <ul className="divide-y rounded-md border">
-                {section.fields.map((field) => (
-                  <li
-                    key={field.key}
-                    className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5"
-                  >
-                    <div>
-                      <p className="font-medium">{field.label}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isFieldFilterEnabled(field) ? (
-                        <Badge variant="secondary" className="gap-1">
-                          <Filter className="h-3 w-3" />
-                          Filter
-                        </Badge>
-                      ) : null}
-                      {field.options?.length ? (
-                        <Badge variant="outline">{field.options.length} options</Badge>
-                      ) : null}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant={
-                              isFieldFilterEnabled(field) ? "default" : "outline"
-                            }
-                            size="icon"
-                            className="h-8 w-8 shrink-0"
-                            disabled={busy}
-                            aria-pressed={isFieldFilterEnabled(field)}
-                            aria-label={
-                              isFieldFilterEnabled(field)
-                                ? `Remove ${field.label} from advanced filters`
-                                : `Use ${field.label} in advanced filters`
-                            }
-                            onClick={() =>
-                              void toggleFieldFilter(
-                                field.key,
-                                !isFieldFilterEnabled(field)
-                              )
-                            }
-                          >
-                            <Filter className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {isFieldFilterEnabled(field)
-                            ? "In advanced filters — click to remove"
-                            : "Use in advanced filters"}
-                        </TooltipContent>
-                      </Tooltip>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setFieldDialog({
-                            mode: "edit",
-                            sectionId: section.id,
-                            fieldKey: field.key,
-                          });
-                          setFieldLabel(field.label);
-                          setFieldKey(field.key);
-                          setFieldType(field.type);
-                          setFieldRequired(!!field.required);
-                          setFieldOptions((field.options ?? []).join(", "));
-                        }}
-                      >
-                        Edit
-                      </Button>
-                      {field.deletable !== false && field.key !== "name" ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive"
-                          onClick={() => setDeleteFieldKey(field.key)}
-                        >
-                          Delete
-                        </Button>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <p className="text-xs text-muted-foreground">
+                Drag fields by the grip handle to reorder. Order is saved to the
+                API automatically.
+              </p>
+              <SortableFieldList
+                sectionId={section.id}
+                fields={section.fields}
+                busy={busy}
+                onReorder={(sectionId, orderedKeys) =>
+                  void reorderFields(sectionId, orderedKeys)
+                }
+                onToggleFilter={(fieldKey, enabled) =>
+                  void toggleFieldFilter(fieldKey, enabled)
+                }
+                onEdit={(field) => openFieldEdit(field, section.id)}
+                onDelete={setDeleteFieldKey}
+              />
               <Button
                 variant="outline"
                 size="sm"

@@ -74,3 +74,10 @@ export type UpdateTeacherFormFieldInput = Partial<{
   sectionId: string;
   filter: boolean | number;
 }>;
+
+/** Section id → ordered field keys for POST /api/teacher-form/reorder */
+export type TeacherFormFieldOrders = Record<string, string[]>;
+
+export type ReorderTeacherFormFieldsInput = {
+  field_orders: TeacherFormFieldOrders;
+};

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
+import { BrandLogo } from "@/components/layout/brand-logo";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -14,12 +15,15 @@ import {
 } from "@/components/ui/tooltip";
 import { MAIN_NAV_LINKS } from "@/config/navigation";
 import { cn } from "@/lib/utils";
+import { useBrandingStore } from "@/store/branding-store";
 import { useUiStore } from "@/store/ui-store";
 
 export function Sidebar({ className }: { className?: string }) {
   const pathname = usePathname();
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggle = useUiStore((s) => s.toggleSidebar);
+  const branding = useBrandingStore((s) => s.branding);
+  const siteName = branding.siteName?.trim() || "Tree Learning";
 
   return (
     <motion.aside
@@ -31,7 +35,24 @@ export function Sidebar({ className }: { className?: string }) {
         className
       )}
     >
-      <ScrollArea className="min-h-0 flex-1 px-2 py-4">
+      <div className={cn("px-2 pt-4", collapsed ? "pb-2" : "pb-3")}>
+        <Link
+          href="/dashboard"
+          className={cn(
+            "flex items-center rounded-xl outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            collapsed ? "justify-center px-1 py-2" : "px-2 py-2"
+          )}
+          aria-label={`${siteName} home`}
+        >
+          {/* <BrandLogo
+            variant="header"
+            logoSrc={branding.loginLogoUrl}
+            alt={siteName}
+            wrapClassName={collapsed ? "w-full justify-center" : undefined}
+          /> */}
+        </Link>
+      </div>
+      <ScrollArea className="min-h-0 flex-1 px-2 pb-4">
         <nav className="flex flex-col gap-1">
           {MAIN_NAV_LINKS.map(({ href, label, icon: Icon }) => {
             const active =

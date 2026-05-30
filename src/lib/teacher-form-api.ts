@@ -8,8 +8,10 @@ import type {
   ApiTeacherFormSection,
   CreateTeacherFormFieldInput,
   CreateTeacherFormSectionInput,
+  ReorderTeacherFormFieldsInput,
   UpdateTeacherFormFieldInput,
   UpdateTeacherFormSectionInput,
+  TeacherFormFieldOrders,
 } from "@/types/teacher-form-api";
 
 const API_BASE = getApiBase();
@@ -204,6 +206,7 @@ export async function listTeacherFormLookupOptionsRequest(
   return {
     ok: true,
     options: listed.options,
+    teacherFormFieldKey: listed.field.key,
     pagination: {
       slug,
       field: listed.field.label,
@@ -217,6 +220,158 @@ export async function listTeacherFormLookupOptionsRequest(
       count: listed.options.length,
     },
   };
+}
+
+function findTeacherFormFieldInConfig(
+  config: ApiTeacherFormConfig,
+  fieldKey: string
+): ApiTeacherFormField | undefined {
+  for (const section of config.sections) {
+    const field = section.fields.find((f) => f.key === fieldKey);
+    if (field) return field;
+  }
+  return undefined;
+}
+
+async function getTeacherFormFieldByKey(
+  accessToken: string | null,
+  fieldKey: string
+): Promise<ApiResult<ApiTeacherFormField>> {
+  const formResult = await getTeacherFormRequest(accessToken);
+  if (!formResult.ok) {
+    return { ok: false, message: formResult.message };
+  }
+  const field = findTeacherFormFieldInConfig(formResult.data, fieldKey);
+  if (!field) {
+    return {
+      ok: false,
+      message: `Field "${fieldKey}" was not found on the teacher form.`,
+    };
+  }
+  return { ok: true, data: field };
+}
+
+function optionIndex(
+  options: string[],
+  label: string
+): number {
+  const needle = label.trim().toLowerCase();
+  return options.findIndex((o) => o.trim().toLowerCase() === needle);
+}
+
+/** PATCH field with a new full `options` array (Form builder style). */
+export async function setTeacherFormFieldOptionsRequest(
+  accessToken: string | null,
+  fieldKey: string,
+  options: string[]
+): Promise<ApiResult<ApiTeacherFormField>> {
+  const fieldResult = await getTeacherFormFieldByKey(accessToken, fieldKey);
+  if (!fieldResult.ok) return fieldResult;
+
+  const field = fieldResult.data;
+  const nextType =
+    field.type === "select" || field.type === "multiselect"
+      ? field.type
+      : "select";
+
+  return updateTeacherFormFieldRequest(accessToken, fieldKey, {
+    label: field.label,
+    type: nextType,
+    required: Boolean(field.required),
+    options,
+  });
+}
+
+/** Append one option (same PATCH as Form builder: full `options` array). */
+export function mergeTeacherFormFieldOptions(
+  existing: string[],
+  singleOption: string
+): { options: string[]; duplicate: boolean } {
+  const trimmed = singleOption.trim();
+  if (!trimmed) {
+    return { options: existing, duplicate: false };
+  }
+  const exists = existing.some(
+    (o) => o.trim().toLowerCase() === trimmed.toLowerCase()
+  );
+  if (exists) {
+    return { options: existing, duplicate: true };
+  }
+  return { options: [...existing, trimmed], duplicate: false };
+}
+
+export async function appendTeacherFormFieldOptionRequest(
+  accessToken: string | null,
+  fieldKey: string,
+  optionLabel: string
+): Promise<ApiResult<ApiTeacherFormField>> {
+  const fieldResult = await getTeacherFormFieldByKey(accessToken, fieldKey);
+  if (!fieldResult.ok) return fieldResult;
+
+  const { options: nextOptions, duplicate } = mergeTeacherFormFieldOptions(
+    fieldResult.data.options ?? [],
+    optionLabel
+  );
+
+  if (duplicate) {
+    return { ok: false, message: "This option already exists." };
+  }
+
+  return setTeacherFormFieldOptionsRequest(
+    accessToken,
+    fieldKey,
+    nextOptions
+  );
+}
+
+export async function renameTeacherFormFieldOptionRequest(
+  accessToken: string | null,
+  fieldKey: string,
+  fromLabel: string,
+  toLabel: string
+): Promise<ApiResult<ApiTeacherFormField>> {
+  const trimmedTo = toLabel.trim();
+  if (!trimmedTo) {
+    return { ok: false, message: "Enter a value for the option." };
+  }
+
+  const fieldResult = await getTeacherFormFieldByKey(accessToken, fieldKey);
+  if (!fieldResult.ok) return fieldResult;
+
+  const current = fieldResult.data.options ?? [];
+  const idx = optionIndex(current, fromLabel);
+  if (idx < 0) {
+    return { ok: false, message: "Option not found." };
+  }
+
+  const duplicate = current.some(
+    (o, i) => i !== idx && o.trim().toLowerCase() === trimmedTo.toLowerCase()
+  );
+  if (duplicate) {
+    return { ok: false, message: "Another option already uses this name." };
+  }
+
+  const next = [...current];
+  next[idx] = trimmedTo;
+  return setTeacherFormFieldOptionsRequest(accessToken, fieldKey, next);
+}
+
+export async function removeTeacherFormFieldOptionRequest(
+  accessToken: string | null,
+  fieldKey: string,
+  optionLabel: string
+): Promise<ApiResult<ApiTeacherFormField>> {
+  const fieldResult = await getTeacherFormFieldByKey(accessToken, fieldKey);
+  if (!fieldResult.ok) return fieldResult;
+
+  const current = fieldResult.data.options ?? [];
+  const idx = optionIndex(current, optionLabel);
+  if (idx < 0) {
+    return { ok: false, message: "Option not found." };
+  }
+
+  const next = current.filter((_, i) => i !== idx);
+  return setTeacherFormFieldOptionsRequest(accessToken, fieldKey, next);
 }
 
 /** POST /api/teacher-form/sections */
@@ -373,6 +528,32 @@ export async function deleteTeacherFormFieldRequest(
     return { ok: false, message: apiErrorMessage(data, res.status) };
   }
   return { ok: true, data: true };
+}
+
+/** POST /api/teacher-form/reorder — reorder fields within section(s) */
+export async function reorderTeacherFormFieldsRequest(
+  accessToken: string | null,
+  fieldOrders: TeacherFormFieldOrders
+): Promise<ApiResult<ApiTeacherFormConfig>> {
+  const body: ReorderTeacherFormFieldsInput = { field_orders: fieldOrders };
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/teacher-form/reorder`, {
+      method: "PATCH",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return {
+      ok: false,
+      message: `Could not reach API at ${API_BASE}.`,
+    };
+  }
+  const data = await parseJson(res);
+  if (!res.ok) {
+    return { ok: false, message: apiErrorMessage(data, res.status) };
+  }
+  return { ok: true, data: normalizeTeacherFormConfig(data) };
 }
 
 /** PUT /api/teacher-form — replace entire config */

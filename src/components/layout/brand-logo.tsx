@@ -3,6 +3,7 @@
 import Image from "next/image";
 
 import { TREE_LEARNING_LOGO_SRC } from "@/config/brand";
+import { resolveSettingsAssetUrl } from "@/lib/settings-assets";
 import { cn } from "@/lib/utils";
 
 export { TREE_LEARNING_LOGO_SRC };
@@ -26,7 +27,18 @@ type BrandLogoProps = {
   className?: string;
   /** Extra classes on the outer wrapper (e.g. shrink-0). */
   wrapClassName?: string;
+  /** Override logo image URL from site settings. */
+  logoSrc?: string;
+  alt?: string;
 };
+
+function useNativeLogoImg(src: string): boolean {
+  return (
+    src.startsWith("http://") ||
+    src.startsWith("https://") ||
+    src.startsWith("data:")
+  );
+}
 
 const imgClass: Record<Exclude<BrandLogoVariant, "login-hero">, string> = {
   header: cn(
@@ -43,22 +55,40 @@ const imgClass: Record<Exclude<BrandLogoVariant, "login-hero">, string> = {
   ),
 };
 
-function LoginHeroMark({ className }: { className?: string }) {
+function LoginHeroMark({
+  className,
+  logoSrc = TREE_LEARNING_LOGO_SRC,
+  alt = "Tree Learning",
+}: {
+  className?: string;
+  logoSrc?: string;
+  alt?: string;
+}) {
   return (
     <span
       className={cn("inline-flex items-center gap-3", className)}
-      aria-label="Tree Learning"
+      aria-label={alt}
     >
       <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-white/15 shadow-[0_0_20px_rgba(74,222,128,0.4)] ring-1 ring-white/25 sm:h-12 sm:w-12">
-        <Image
-          src={TREE_LEARNING_LOGO_SRC}
-          alt=""
-          width={400}
-          height={96}
-          priority
-          className="absolute left-0 top-1/2 h-11 w-auto max-w-none -translate-y-1/2 object-cover object-left sm:h-12"
-          style={{ minWidth: "7.5rem" }}
-        />
+        {useNativeLogoImg(logoSrc) ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logoSrc}
+            alt=""
+            className="absolute left-0 top-1/2 h-11 w-auto max-w-none -translate-y-1/2 object-cover object-left sm:h-12"
+            style={{ minWidth: "7.5rem" }}
+          />
+        ) : (
+          <Image
+            src={logoSrc}
+            alt=""
+            width={400}
+            height={96}
+            priority
+            className="absolute left-0 top-1/2 h-11 w-auto max-w-none -translate-y-1/2 object-cover object-left sm:h-12"
+            style={{ minWidth: "7.5rem" }}
+          />
+        )}
       </span>
       <span className="text-[1.75rem] font-bold lowercase leading-none tracking-tight text-white sm:text-3xl">
         tree
@@ -67,21 +97,44 @@ function LoginHeroMark({ className }: { className?: string }) {
   );
 }
 
-export function BrandLogo({ variant, className, wrapClassName }: BrandLogoProps) {
+export function BrandLogo({
+  variant,
+  className,
+  wrapClassName,
+  logoSrc,
+  alt = "Tree Learning",
+}: BrandLogoProps) {
+  const rawSrc = logoSrc?.trim() || TREE_LEARNING_LOGO_SRC;
+  const src = resolveSettingsAssetUrl(rawSrc);
+  const nativeImg = useNativeLogoImg(src);
+
   if (variant === "login-hero") {
-    return <LoginHeroMark className={cn(wrapClassName, className)} />;
+    return (
+      <LoginHeroMark
+        className={cn(wrapClassName, className)}
+        logoSrc={src}
+        alt={alt}
+      />
+    );
   }
+
+  const classNameImg = imgClass[variant];
 
   return (
     <span className={cn(logoShell, wrapClassName, className)}>
-      <Image
-        src={TREE_LEARNING_LOGO_SRC}
-        alt="Tree Learning"
-        width={400}
-        height={96}
-        priority
-        className={imgClass[variant]}
-      />
+      {nativeImg ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt={alt} className={classNameImg} />
+      ) : (
+        <Image
+          src={src}
+          alt={alt}
+          width={400}
+          height={96}
+          priority
+          className={classNameImg}
+        />
+      )}
     </span>
   );
 }

@@ -14,19 +14,25 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { MAIN_NAV_LINKS } from "@/config/navigation";
 import { cn } from "@/lib/utils";
+import { useBrandingStore } from "@/store/branding-store";
 import { useUiStore } from "@/store/ui-store";
 
 export function MobileSidebar() {
   const open = useUiStore((s) => s.mobileNavOpen);
   const setOpen = useUiStore((s) => s.setMobileNavOpen);
   const pathname = usePathname();
+  const branding = useBrandingStore((s) => s.branding);
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent side="left" className="w-72 p-0">
         <SheetHeader className="border-b px-4 py-4 text-left">
           <SheetTitle className="sr-only">Main navigation</SheetTitle>
-          <BrandLogo variant="sheet" />
+          <BrandLogo
+            variant="sheet"
+            logoSrc={branding.loginLogoUrl}
+            alt={branding.siteName}
+          />
         </SheetHeader>
         <nav className="flex flex-col gap-1 p-3">
           {MAIN_NAV_LINKS.map(({ href, label, icon: Icon }) => {

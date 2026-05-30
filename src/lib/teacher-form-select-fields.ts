@@ -28,6 +28,14 @@ export function isSelectOrMultiselectField(
   return field.type === "select" || field.type === "multiselect";
 }
 
+export function fieldHasConfiguredOptions(field: ApiTeacherFormField): boolean {
+  return (field.options?.length ?? 0) > 0;
+}
+
+export function fieldSupportsLookupList(field: ApiTeacherFormField): boolean {
+  return isSelectOrMultiselectField(field) || fieldHasConfiguredOptions(field);
+}
+
 /** All select / multiselect fields from teacher-form config. */
 export function getSelectMultiselectFields(
   config: ApiTeacherFormConfig
@@ -50,15 +58,17 @@ export function getSelectMultiselectFields(
 /** Resolve one lookup slug to a teacher-form field (key, then label). */
 export function findTeacherFormFieldForLookupSlug(
   config: ApiTeacherFormConfig,
-  slug: LookupMenuSlug
+  slug: string
 ): ApiTeacherFormField | undefined {
-  const expectedKey = LOOKUP_SLUG_TO_FIELD_KEY[slug];
+  const expectedKey =
+    LOOKUP_SLUG_TO_FIELD_KEY[slug as LookupMenuSlug] ??
+    slug.trim().replace(/-/g, "_");
   const menu = getLookupMenuItem(slug);
   const targetLabel = menu ? normalizeLabel(menu.label) : "";
 
   for (const section of config.sections) {
     for (const field of section.fields) {
-      if (!isSelectOrMultiselectField(field)) continue;
+      if (!fieldSupportsLookupList(field)) continue;
       if (field.key === expectedKey) return field;
     }
   }
@@ -66,7 +76,7 @@ export function findTeacherFormFieldForLookupSlug(
   if (menu) {
     for (const section of config.sections) {
       for (const field of section.fields) {
-        if (!isSelectOrMultiselectField(field)) continue;
+        if (!fieldSupportsLookupList(field)) continue;
         if (normalizeLabel(field.label) === targetLabel) return field;
         for (const hint of menu.match) {
           const h = normalizeLabel(hint);
@@ -94,7 +104,7 @@ export type TeacherFormLookupOptionsResult = {
 /** Paginated option rows from `field.options` on teacher-form. */
 export function listTeacherFormFieldOptions(
   config: ApiTeacherFormConfig,
-  slug: LookupMenuSlug,
+  slug: string,
   page = 1,
   limit = 10,
   search = ""
