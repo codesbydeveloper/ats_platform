@@ -178,10 +178,10 @@ export async function getMeRequest(
   return { ok: true, data: { user: pickUser(data, "") } };
 }
 
-/** PATCH /api/auth/profile — { name, email } */
+/** PATCH /api/auth/profile — { name, email, number } */
 export async function updateProfileRequest(
   accessToken: string,
-  profile: { name: string; email: string }
+  profile: { name: string; email: string; number?: string }
 ): Promise<ApiResult<{ user: AuthUser }>> {
   let res: Response;
   try {
@@ -191,6 +191,7 @@ export async function updateProfileRequest(
       body: JSON.stringify({
         name: profile.name.trim(),
         email: profile.email.trim(),
+        number: (profile.number ?? "").trim(),
       }),
     });
   } catch {

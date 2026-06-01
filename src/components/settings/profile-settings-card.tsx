@@ -21,6 +21,14 @@ import { useAuthStore } from "@/store/auth-store";
 const profileSchema = z.object({
   name: z.string().trim().min(2, "Display name must be at least 2 characters"),
   email: z.string().trim().email("Enter a valid email address"),
+  number: z
+    .string()
+    .trim()
+    .optional()
+    .refine(
+      (v) => !v || /^[0-9+()\-.\s]{7,20}$/.test(v),
+      "Enter a valid phone number"
+    ),
 });
 
 export function ProfileSettingsCard() {
@@ -30,20 +38,24 @@ export function ProfileSettingsCard() {
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [number, setNumber] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setName(user?.name ?? "");
     setEmail(user?.email ?? "");
-  }, [user?.name, user?.email]);
+    setNumber(user?.number ?? "");
+  }, [user?.name, user?.email, user?.number]);
 
   const baselineName = user?.name ?? "";
   const baselineEmail = user?.email ?? "";
-  const isDirty = name !== baselineName || email !== baselineEmail;
+  const baselineNumber = user?.number ?? "";
+  const isDirty =
+    name !== baselineName || email !== baselineEmail || number !== baselineNumber;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsed = profileSchema.safeParse({ name, email });
+    const parsed = profileSchema.safeParse({ name, email, number });
     if (!parsed.success) {
       const msg = parsed.error.issues[0]?.message ?? "Check your profile fields.";
       toast.error("Could not save profile", { description: msg });
@@ -66,7 +78,7 @@ export function ProfileSettingsCard() {
       }
       setUser(result.data.user);
       toast.success("Profile saved", {
-        description: "Your display name and email are updated on the server.",
+        description: "Your profile is updated on the server.",
       });
     } finally {
       setSaving(false);
@@ -76,6 +88,7 @@ export function ProfileSettingsCard() {
   const handleReset = () => {
     setName(baselineName);
     setEmail(baselineEmail);
+    setNumber(baselineNumber);
   };
 
   if (!user) {
@@ -120,21 +133,18 @@ export function ProfileSettingsCard() {
               disabled={fieldsDisabled}
             />
           </div>
-          {user.number ? (
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="profile-number">Phone number</Label>
-              <Input
-                id="profile-number"
-                value={user.number}
-                readOnly
-                disabled
-                className="bg-muted/40"
-              />
-              <p className="text-xs text-muted-foreground">
-                From your account (not editable here).
-              </p>
-            </div>
-          ) : null}
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="profile-number">Phone number</Label>
+            <Input
+              id="profile-number"
+              value={number}
+              onChange={(e) => setNumber(e.target.value)}
+              autoComplete="tel"
+              placeholder="e.g. 7069221320"
+              disabled={fieldsDisabled}
+              inputMode="tel"
+            />
+          </div>
           <div className="flex flex-wrap gap-2 sm:col-span-2">
             <Button type="submit" disabled={!isDirty || fieldsDisabled}>
               {saving ? "Saving…" : "Save profile"}
