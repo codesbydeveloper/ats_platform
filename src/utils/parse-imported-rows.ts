@@ -110,7 +110,6 @@ export function rowToTeacher(
   const { ug, pg } = splitUniversities(normalized.universitiesColleges);
   const preferred =
     normalized.preferredCities || city;
-  const skills = splitList(normalized.tags);
   const contactNote = normalized.contactId
     ? `Contact ID: ${normalized.contactId}`
     : "";
@@ -141,11 +140,11 @@ export function rowToTeacher(
     workHistory: [
       defaultWork(normalized.schoolName || "Imported record"),
     ],
-    resumeFileName: normalized.resume || null,
+    resumeFileName: null,
     resumeMime: null,
     notes,
     status,
-    skills: skills.length ? skills : ["General"],
+    skills: ["General"],
     createdAt: new Date().toISOString(),
   };
 

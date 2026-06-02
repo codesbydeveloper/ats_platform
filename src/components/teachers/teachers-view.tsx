@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RowSelectionState } from "@tanstack/react-table";
+import * as XLSX from "xlsx";
 import {
   Download,
   Filter,
@@ -37,14 +38,17 @@ import { filterTeachers } from "@/utils/filter-teachers";
 import {
   exportTeachersCsv,
   exportTeachersXlsx,
+  appendTeacherLookupSheets,
 } from "@/utils/export-teachers";
 import { useAuthStore } from "@/store/auth-store";
 import { listAllCategoriesRequest } from "@/lib/categories-api";
+import { fetchTeacherFormOptions } from "@/lib/teacher-form-options";
 import { useFilterStore } from "@/store/filter-store";
 import {
   bulkDeleteTeachersRequest,
   deleteTeacherRequest,
   exportTeachersFromApi,
+  exportTeachersFileFromApi,
   listTeachersRequest,
   updateTeacherRequest,
 } from "@/lib/teachers-api";
@@ -288,12 +292,105 @@ export function TeachersView() {
   const exportName = () =>
     `teachers-export-${new Date().toISOString().slice(0, 10)}`;
 
+  const sanitizeExportWorkbookContactIds = (book: XLSX.WorkBook) => {
+    const sheetName = book.Sheets.Teachers ? "Teachers" : book.SheetNames[0];
+    if (!sheetName) return;
+    const sheet = book.Sheets[sheetName];
+    if (!sheet || !sheet["!ref"]) return;
+    const range = XLSX.utils.decode_range(sheet["!ref"]);
+
+    const norm = (v: unknown) =>
+      String(v ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+
+    let headerRow = range.s.r;
+    let contactCol: number | null = null;
+
+    // Find "CONTACT ID" header within first few rows.
+    for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + 4); r++) {
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        const cell = sheet[addr];
+        if (!cell) continue;
+        if (norm(cell.v) === "contact id") {
+          headerRow = r;
+          contactCol = c;
+          break;
+        }
+      }
+      if (contactCol != null) break;
+    }
+
+    if (contactCol == null) return;
+
+    for (let r = headerRow + 1; r <= range.e.r; r++) {
+      const addr = XLSX.utils.encode_cell({ r, c: contactCol });
+      const cell = sheet[addr];
+      if (!cell || cell.v == null) continue;
+      const v = String(cell.v).trim();
+      if (!v) continue;
+      const next = v.replace(/^tch[-\s]*/i, "");
+      if (next !== v) {
+        cell.v = next;
+        delete (cell as { w?: string }).w;
+      }
+    }
+  };
+
   const handleExport = useCallback(
     async (
       scope: "all" | "filtered" | "selected",
       format: "xlsx" | "csv"
     ) => {
       if (accessToken) {
+        // Decorate XLSX exports with the same lookup sheets as the import template.
+        if (format === "xlsx") {
+          if (scope === "selected") {
+            const ids = selectedRows.map((t) => t.id);
+            if (!ids.length) {
+              toast.error("Select at least one row");
+              return;
+            }
+            const result = await exportTeachersFileFromApi(accessToken, {
+              scope,
+              format,
+              selectedIds: ids,
+            });
+            if (!result.ok) {
+              toast.error("Export failed", { description: result.message });
+              return;
+            }
+            const options = await fetchTeacherFormOptions(accessToken);
+            const buf = await result.blob.arrayBuffer();
+            const book = XLSX.read(new Uint8Array(buf), { type: "array" });
+            appendTeacherLookupSheets(book, options);
+            sanitizeExportWorkbookContactIds(book);
+            XLSX.writeFile(book, result.filename);
+            toast.success("Export complete", { description: result.filename });
+            return;
+          }
+
+          const result = await exportTeachersFileFromApi(accessToken, {
+            scope,
+            format,
+            filters: scope === "filtered" ? appliedFilters : undefined,
+          });
+          if (!result.ok) {
+            toast.error("Export failed", { description: result.message });
+            return;
+          }
+          const options = await fetchTeacherFormOptions(accessToken);
+          const buf = await result.blob.arrayBuffer();
+          const book = XLSX.read(new Uint8Array(buf), { type: "array" });
+          appendTeacherLookupSheets(book, options);
+          sanitizeExportWorkbookContactIds(book);
+          XLSX.writeFile(book, result.filename);
+          toast.success("Export complete", { description: result.filename });
+          return;
+        }
+
         if (scope === "selected") {
           const ids = selectedRows.map((t) => t.id);
           if (!ids.length) {
@@ -340,7 +437,10 @@ export function TeachersView() {
           return;
         }
       }
-      if (format === "xlsx") exportTeachersXlsx(data, exportName());
+      if (format === "xlsx") {
+        const options = await fetchTeacherFormOptions(accessToken);
+        exportTeachersXlsx(data, exportName(), options);
+      }
       else exportTeachersCsv(data, exportName());
       toast.success("Export started", {
         description: `${data.length} record(s) · ${format.toUpperCase()}`,

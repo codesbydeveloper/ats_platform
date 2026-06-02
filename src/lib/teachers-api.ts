@@ -89,6 +89,7 @@ export function buildTeacherApiPayload(
   const skills = mergeApiStringArrays(values.skills, values.customFields?.skills);
   const experienceYears = Number(values.experienceYears) || 0;
   const currentSalary = Number(values.currentSalary) || 0;
+  const qualifications = parseMultiselectStoredValue(values.qualification);
 
   return {
     name: sanitizeApiText(values.name),
@@ -118,6 +119,7 @@ export function buildTeacherApiPayload(
     ug_college: sanitizeApiText(values.ugCollege),
     pg_university: sanitizeApiText(values.pgUniversity),
     qualification: sanitizeApiText(values.qualification),
+    qualifications: sanitizeApiStringArray(qualifications),
     certifications: sanitizeApiText(String(values.certifications ?? "")),
     additional_education: (values.extraEducation ?? [])
       .map((e) => sanitizeApiText(e.value))
@@ -182,6 +184,10 @@ function appendTeacherPayloadToFormData(
   formData.append("ug_college", String(p.ug_college));
   formData.append("pg_university", String(p.pg_university));
   formData.append("qualification", String(p.qualification));
+  formData.append(
+    "qualifications",
+    serializeApiStringArray(parseApiStringArray(p.qualifications))
+  );
   formData.append("certifications", String(p.certifications));
   formData.append(
     "additional_education",
@@ -525,6 +531,7 @@ export function mapApiRowToTeacher(row: unknown): Teacher | null {
     qualification:
       mergeApiStringArrays(
         r.qualification,
+        r.qualifications,
         r.educational_qualifications,
         r.educationalQualifications
       ).join(", ") || "",
@@ -1082,12 +1089,15 @@ export type ExportTeachersFromApiResult =
   | { ok: true; filename: string }
   | { ok: false; message: string };
 
+export type ExportTeachersFileFromApiResult =
+  | { ok: true; filename: string; blob: Blob; format: "xlsx" | "csv" }
+  | { ok: false; message: string };
+
 /**
- * Export teachers from API:
- * - all / filtered: GET `?scope=...&format=...` (+ filter query params)
- * - selected: POST JSON `{ scope, format, ids }` (same as curl)
+ * Export teachers from API (like `exportTeachersFromApi`) but return the file blob
+ * so callers can post-process the XLSX before downloading.
  */
-export async function exportTeachersFromApi(
+export async function exportTeachersFileFromApi(
   accessToken: string,
   args: {
     scope: "all" | "filtered" | "selected";
@@ -1095,7 +1105,7 @@ export async function exportTeachersFromApi(
     filters?: TeacherFilters;
     selectedIds?: string[];
   }
-): Promise<ExportTeachersFromApiResult> {
+): Promise<ExportTeachersFileFromApiResult> {
   const { scope, format, filters, selectedIds } = args;
 
   let res: Response;
@@ -1153,8 +1163,27 @@ export async function exportTeachersFromApi(
   );
   const { filename, mime } = normalizeExportDownload(fromHeader, format);
   const blob = new Blob([buf], { type: mime });
-  triggerBlobDownload(blob, filename);
-  return { ok: true, filename };
+  return { ok: true, filename, blob, format };
+}
+
+/**
+ * Export teachers from API:
+ * - all / filtered: GET `?scope=...&format=...` (+ filter query params)
+ * - selected: POST JSON `{ scope, format, ids }` (same as curl)
+ */
+export async function exportTeachersFromApi(
+  accessToken: string,
+  args: {
+    scope: "all" | "filtered" | "selected";
+    format: "xlsx" | "csv";
+    filters?: TeacherFilters;
+    selectedIds?: string[];
+  }
+): Promise<ExportTeachersFromApiResult> {
+  const result = await exportTeachersFileFromApi(accessToken, args);
+  if (!result.ok) return result;
+  triggerBlobDownload(result.blob, result.filename);
+  return { ok: true, filename: result.filename };
 }
 
 export type ImportTeachersFileResult =

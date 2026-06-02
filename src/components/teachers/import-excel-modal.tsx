@@ -35,6 +35,7 @@ import { buildSampleTemplateWorkbook } from "@/utils/export-teachers";
 import { rowToTeacher, type ParsedRow } from "@/utils/parse-imported-rows";
 import { TEACHER_EXCEL_HEADERS } from "@/utils/teacher-excel-columns";
 import { importTeachersFileRequest } from "@/lib/teachers-api";
+import { fetchTeacherFormOptions } from "@/lib/teacher-form-options";
 import { useAuthStore } from "@/store/auth-store";
 import type { Teacher } from "@/types/teacher";
 import { cn } from "@/lib/utils";
@@ -132,10 +133,17 @@ export function ImportExcelModal({
     if (file) parseFile(file);
   };
 
-  const downloadTemplate = () => {
-    const book = buildSampleTemplateWorkbook();
-    XLSX.writeFile(book, "teacher-import-template.xlsx");
-    toast.success("Template downloaded");
+  const downloadTemplate = async () => {
+    try {
+      const options = await fetchTeacherFormOptions(accessToken);
+      const book = buildSampleTemplateWorkbook(options);
+      XLSX.writeFile(book, "teacher-import-template.xlsx");
+      toast.success("Template downloaded");
+    } catch {
+      const book = buildSampleTemplateWorkbook();
+      XLSX.writeFile(book, "teacher-import-template.xlsx");
+      toast.success("Template downloaded");
+    }
   };
 
   const runImport = async () => {

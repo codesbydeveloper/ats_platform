@@ -11,16 +11,30 @@ export const TEACHER_EXCEL_HEADERS = [
   "UNIVERSITIES / COLLEGES ATTENDED",
   "EDUCATIONAL QUALIFICATION",
   "SUBJECTS TAUGHT",
-  "TAGS",
   "QUALIFICATION CERTIFICATION",
   "GRADES TAUGHT",
   "BOARDS TAUGHT",
   "NOTES",
   "TEACHER ROLES",
-  "Resume",
 ] as const;
 
 export type TeacherExcelHeader = (typeof TEACHER_EXCEL_HEADERS)[number];
+
+function formatExcelList(value: string): string {
+  const parts = String(value ?? "")
+    .split(/[;,/]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length <= 1) return parts[0] ?? "";
+  return parts.join("; ");
+}
+
+function stripTeacherCodePrefix(value: string): string {
+  const v = String(value ?? "").trim();
+  if (!v) return "";
+  // Backend sometimes returns teacher codes like "TCH-1009954"; exports should store the raw id.
+  return v.replace(/^tch[-\s]*/i, "");
+}
 
 export type NormalizedImportRow = {
   contactId: string;
@@ -32,13 +46,11 @@ export type NormalizedImportRow = {
   universitiesColleges: string;
   educationalQualification: string;
   subjectsTaught: string;
-  tags: string;
   qualificationCertification: string;
   gradesTaught: string;
   boardsTaught: string;
   notes: string;
   teacherRoles: string;
-  resume: string;
   /** Legacy / extra columns */
   state: string;
   address: string;
@@ -79,8 +91,6 @@ const ALIAS_TO_FIELD: Record<string, keyof NormalizedImportRow> = {
   "subjects taught": "subjectsTaught",
   subject: "subjectsTaught",
   subjects: "subjectsTaught",
-  tags: "tags",
-  skills: "tags",
   "qualification certification": "qualificationCertification",
   "qualification / certification": "qualificationCertification",
   certifications: "qualificationCertification",
@@ -92,9 +102,6 @@ const ALIAS_TO_FIELD: Record<string, keyof NormalizedImportRow> = {
   "teacher roles": "teacherRoles",
   roles: "teacherRoles",
   role: "teacherRoles",
-  resume: "resume",
-  resumefilename: "resume",
-  "resume file": "resume",
 
   state: "state",
   address: "address",
@@ -120,13 +127,11 @@ function emptyNormalized(): NormalizedImportRow {
     universitiesColleges: "",
     educationalQualification: "",
     subjectsTaught: "",
-    tags: "",
     qualificationCertification: "",
     gradesTaught: "",
     boardsTaught: "",
     notes: "",
     teacherRoles: "",
-    resume: "",
     state: "",
     address: "",
     experienceYears: "",
@@ -164,22 +169,20 @@ export function teacherToExcelRow(
     notesOut = notesOut.replace(/^Contact ID:\s*.+\n?/, "").trim();
   }
   return {
-    "CONTACT ID": displayContactId,
+    "CONTACT ID": stripTeacherCodePrefix(displayContactId),
     NAME: t.name,
     MOBILE: t.mobile,
     EMAIL: t.email,
     CITY: t.city,
     "PREFERRED CITIES": t.preferredLocation,
     "UNIVERSITIES / COLLEGES ATTENDED": uni || t.ugCollege,
-    "EDUCATIONAL QUALIFICATION": t.qualification,
-    "SUBJECTS TAUGHT": t.subject,
-    TAGS: t.skills.join("; "),
-    "QUALIFICATION CERTIFICATION": t.certifications,
+    "EDUCATIONAL QUALIFICATION": formatExcelList(t.qualification),
+    "SUBJECTS TAUGHT": formatExcelList(t.subject),
+    "QUALIFICATION CERTIFICATION": formatExcelList(t.certifications),
     "GRADES TAUGHT": t.grades.join("; "),
     "BOARDS TAUGHT": t.boards.join("; "),
     NOTES: notesOut,
     "TEACHER ROLES": t.roles.join("; "),
-    Resume: t.resumeFileName ?? "",
   };
 }
 
@@ -192,14 +195,12 @@ export function buildTemplateSampleRow(): Record<TeacherExcelHeader, string> {
     CITY: "Mumbai",
     "PREFERRED CITIES": "Mumbai; Pune",
     "UNIVERSITIES / COLLEGES ATTENDED": "Example UG College; Example PG University",
-    "EDUCATIONAL QUALIFICATION": "B.Ed",
+    "EDUCATIONAL QUALIFICATION": "B.Ed; M.Ed",
     "SUBJECTS TAUGHT": "Mathematics",
-    TAGS: "STEM; CBSE",
     "QUALIFICATION CERTIFICATION": "CTET",
     "GRADES TAUGHT": "Grade 9–10",
     "BOARDS TAUGHT": "CBSE",
     NOTES: "Imported via template",
     "TEACHER ROLES": "Subject Teacher",
-    Resume: "sample_resume.pdf",
   };
 }

@@ -670,6 +670,7 @@ function ApiFormField({
     selectedState,
   });
   const formKey = apiFieldKeyToFormKey(field.key);
+  const isQualificationField = field.key === "qualification" || formKey === "qualification";
   const selectOptionsWithCurrent = (value: unknown) => {
     const current = String(value ?? "").trim();
     if (!current) return options;
@@ -914,6 +915,44 @@ function ApiFormField({
             selectedState
           )
         : "No options — add them under Filter lists";
+
+    if (isQualificationField) {
+      return (
+        <FormField
+          control={control}
+          name="qualification"
+          render={({ field: f }) => {
+            const selected = parseMultiselectStoredValue(f.value);
+            return (
+              <FormItem className={fieldItemClass()}>
+                <FormLabel>
+                  {field.label}
+                  {field.required ? (
+                    <span className="text-destructive" aria-hidden>
+                      {" "}
+                      *
+                    </span>
+                  ) : null}
+                </FormLabel>
+                <FormControl>
+                  <SearchableMultiSelect
+                    hideLabel
+                    label={field.label}
+                    placeholder={`Select ${field.label.toLowerCase()}…`}
+                    selected={selected}
+                    options={multiselectOptionsWithSelected(selected)}
+                    onChange={(next) => f.onChange(formatMultiselectStoredValue(next))}
+                    searchPlaceholder={`Search ${field.label.toLowerCase()}…`}
+                  />
+                </FormControl>
+                <FieldError message={layoutError} />
+                <FormMessage />
+              </FormItem>
+            );
+          }}
+        />
+      );
+    }
 
     return (
       <FormField
