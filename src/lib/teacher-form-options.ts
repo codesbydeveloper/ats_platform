@@ -204,11 +204,24 @@ export function resolveFieldOptions(
 ): string[] {
   const selectedCountry = location?.selectedCountry;
   const selectedState = location?.selectedState;
+
+  const formKey = apiFieldKeyToFormKey(field.key);
+  const wantsAllIndianCities =
+    formKey === "currentLocation" ||
+    formKey === "preferredLocation" ||
+    field.key === "current_location" ||
+    field.key === "preferred_location";
+
+  // Current/Preferred location should always be the full India cities/towns list
+  // from the package dataset (not from API-provided options).
+  if (wantsAllIndianCities) {
+    return getAllIndianCities();
+  }
+
   if (field.options && field.options.length > 0) {
     return field.options;
   }
 
-  const formKey = apiFieldKeyToFormKey(field.key);
   const slug =
     FIELD_KEY_TO_SLUG[field.key] ??
     (formKey ? FIELD_KEY_TO_SLUG[formKey] : undefined);

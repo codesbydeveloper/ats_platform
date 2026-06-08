@@ -9,7 +9,6 @@ import { toast } from "sonner";
 import { BrandLogo } from "@/components/layout/brand-logo";
 import { useEffectiveTheme } from "@/hooks/use-effective-theme";
 import { MobileSidebarTrigger } from "@/components/layout/mobile-sidebar";
-import { SearchInput } from "@/components/shared/search-input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +22,6 @@ import {
 import { LOOKUP_MENU_ITEMS } from "@/config/lookup-menu";
 import { useAuthStore } from "@/store/auth-store";
 import { useBrandingStore } from "@/store/branding-store";
-import { useFilterStore } from "@/store/filter-store";
 import { useUiStore } from "@/store/ui-store";
 
 /** Full-width top bar — logo left, centered pill search, utilities right. */
@@ -32,8 +30,6 @@ export function AppBrandHeader() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const branding = useBrandingStore((s) => s.branding);
-  const search = useFilterStore((s) => s.filters.search);
-  const setFilters = useFilterStore((s) => s.setFilters);
   const { setTheme } = useTheme();
   const themePreference = useUiStore((s) => s.themePreference);
   const setThemePreference = useUiStore((s) => s.setThemePreference);
@@ -83,17 +79,7 @@ export function AppBrandHeader() {
           </Link>
         </div>
 
-        {/* Center: wide pill search */}
-        <div className="flex min-w-0 flex-1 justify-center px-1 sm:px-4 md:px-8">
-          <div className="w-full max-w-xl lg:max-w-2xl">
-            <SearchInput
-              variant="header"
-              value={search}
-              onValueChange={(v) => setFilters({ search: v })}
-              placeholder="Search teachers, subjects, cities…"
-            />
-          </div>
-        </div>
+        <div className="flex-1" />
 
         {/* Right: theme, notifications, profile */}
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
