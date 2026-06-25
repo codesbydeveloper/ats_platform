@@ -36,6 +36,16 @@ export function DynamicFilterFieldControl({
   const options = optionsProp ?? field.options;
   const searchPlaceholder = filterSearchPlaceholder(label);
 
+  const normalizeTextInput = (raw: string): string => {
+    if (field.key === "name") {
+      return raw.replace(/[^a-zA-Z\s.'-]/g, "");
+    }
+    if (field.key === "mobile") {
+      return raw.replace(/\D/g, "");
+    }
+    return raw;
+  };
+
   if (variant === "grid") {
     if (usesDropdownFilterControl(field, options)) {
       return (
@@ -67,9 +77,17 @@ export function DynamicFilterFieldControl({
         placeholder={searchPlaceholder}
         type={inputType}
         value={textVal}
-        onChange={(e) =>
-          onChange(e.target.value.trim() ? [e.target.value.trim()] : [])
+        inputMode={
+          field.key === "mobile"
+            ? "numeric"
+            : field.key === "email"
+              ? "email"
+              : undefined
         }
+        onChange={(e) => {
+          const next = normalizeTextInput(e.target.value);
+          onChange(next.trim() ? [next.trim()] : []);
+        }}
       />
     );
   }
@@ -139,9 +157,17 @@ export function DynamicFilterFieldControl({
         className="h-10"
         placeholder={`Filter by ${label.toLowerCase()}…`}
         value={textVal}
-        onChange={(e) =>
-          onChange(e.target.value.trim() ? [e.target.value.trim()] : [])
+        inputMode={
+          field.key === "mobile"
+            ? "numeric"
+            : field.key === "email"
+              ? "email"
+              : undefined
         }
+        onChange={(e) => {
+          const next = normalizeTextInput(e.target.value);
+          onChange(next.trim() ? [next.trim()] : []);
+        }}
       />
     </div>
   );

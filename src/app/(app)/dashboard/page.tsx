@@ -11,7 +11,6 @@ import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { StatsCard } from "@/components/dashboard/stats-card";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatsCardSkeleton, TableSkeleton } from "@/components/shared/loading-skeleton";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -134,7 +133,6 @@ export default function DashboardPage() {
                           {t.subject}
                         </p>
                       </div>
-                      <Badge variant="secondary">{t.status}</Badge>
                     </motion.div>
                   ))
                 )}

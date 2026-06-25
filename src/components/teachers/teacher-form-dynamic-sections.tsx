@@ -38,16 +38,10 @@ import {
   configHasWorkExperienceRows,
   defaultWorkEntry,
   EMPLOYED_FIELD_KEY,
-  employedValueFromSalary,
   getEmployedValue,
   getWorkRepeatFieldMeta,
-  isSalaryFieldKey,
-  isWorkDetailFieldKeyExcludingSalary,
   isWorkExperienceSection,
   isWorkRepeatFieldKey,
-  shouldShowEmployedField,
-  shouldShowSalaryField,
-  shouldShowWorkDetailFields,
   type WorkRepeatFieldMeta,
 } from "@/lib/work-experience-form";
 import {
@@ -1214,57 +1208,19 @@ export function TeacherFormDynamicSections({
 }: TeacherFormDynamicSectionsProps) {
   const selectedCountry = form.watch("country");
   const selectedState = form.watch("state");
-  const customFields = form.watch("customFields") ?? {};
-  const currentSalary = form.watch("currentSalary");
-  const showWorkDetails = shouldShowWorkDetailFields(
-    isEditMode,
-    customFields,
-    currentSalary
-  );
-  const showEmployed = shouldShowEmployedField();
-  const showSalary = shouldShowSalaryField(
-    isEditMode,
-    customFields,
-    currentSalary
-  );
+  const employedValue = getEmployedValue(form.watch("customFields") ?? {});
+  const employedNo = employedValue.trim().toLowerCase() === "no";
 
-  useEffect(() => {
-    if (!isEditMode) return;
-    const prev = form.getValues("customFields") ?? {};
-    const next = employedValueFromSalary(currentSalary, customFields);
-    if (getEmployedValue(prev).toLowerCase() === next.toLowerCase()) return;
-    form.setValue(
-      "customFields",
-      { ...prev, [EMPLOYED_FIELD_KEY]: next },
-      { shouldDirty: false }
-    );
-  }, [isEditMode, currentSalary, customFields?.salary, form]);
   const skillsField = findSkillsField(config);
   let skillsRendered = false;
 
   useEffect(() => {
     if (!configHasWorkExperienceRows(config)) return;
 
-    if (!showWorkDetails) {
-      if (isEditMode) return;
-      const prev = form.getValues("customFields") ?? {};
-      form.setValue("customFields", {
-        ...prev,
-        salary: "",
-        total_years_experience: "",
-      });
-      form.setValue("currentSalary", 0);
-      form.setValue("experienceYears", 0);
-      if (form.getValues("workHistory").length > 0) {
-        form.setValue("workHistory", []);
-      }
-      return;
-    }
-
-    if (form.getValues("workHistory").length === 0) {
+    if (!employedNo && form.getValues("workHistory").length === 0) {
       form.setValue("workHistory", [defaultWorkEntry()]);
     }
-  }, [showWorkDetails, config, form, isEditMode]);
+  }, [config, form, employedNo]);
 
   if (config.sections.length === 0) {
     return (
@@ -1335,20 +1291,14 @@ export function TeacherFormDynamicSections({
 
                     const visibleInWorkSection = (field: ApiTeacherFormField) => {
                       if (!isWorkSection) return true;
-                      if (field.key === EMPLOYED_FIELD_KEY) return showEmployed;
-                      if (isSalaryFieldKey(field.key)) return showSalary;
-                      if (
-                        !showWorkDetails &&
-                        isWorkDetailFieldKeyExcludingSalary(field.key)
-                      ) {
-                        return false;
+                      if (employedNo) {
+                        // When not employed, only show the "Are You Employed" field.
+                        return field.key === EMPLOYED_FIELD_KEY;
                       }
                       return true;
                     };
 
                     const renderField = (field: ApiTeacherFormField) => {
-                      const employedLocked =
-                        isEditMode && field.key === EMPLOYED_FIELD_KEY;
                       return (
                         <ApiFormField
                           key={field.id || field.key}
@@ -1359,24 +1309,26 @@ export function TeacherFormDynamicSections({
                           selectedCountry={selectedCountry}
                           selectedState={selectedState}
                           layoutError={layoutErrors[field.key]}
-                          disabled={employedLocked}
                         />
                       );
                     };
 
                     const beforeWork = sortFieldsByApiOrder(
-                      (isWorkSection && repeatMin != null
-                        ? gridFields.filter(
-                            (f) => (f.sortOrder ?? 0) < repeatMin
-                          )
+                      (isWorkSection && repeatMin != null && repeatMax != null
+                        ? gridFields.filter((f) => {
+                            const order = f.sortOrder ?? 0;
+                            const inRepeatRange =
+                              order >= repeatMin && order <= repeatMax;
+                            // Important: do not drop non-repeat fields whose
+                            // sortOrder falls between repeat fields.
+                            return order <= repeatMin || inRepeatRange;
+                          })
                         : gridFields
                       ).filter(visibleInWorkSection)
                     );
                     const afterWork = sortFieldsByApiOrder(
                       (isWorkSection && repeatMax != null
-                        ? gridFields.filter(
-                            (f) => (f.sortOrder ?? 0) > repeatMax
-                          )
+                        ? gridFields.filter((f) => (f.sortOrder ?? 0) > repeatMax)
                         : []
                       ).filter(visibleInWorkSection)
                     );
@@ -1384,8 +1336,7 @@ export function TeacherFormDynamicSections({
                     return (
                       <>
                         {beforeWork.map((field) => renderField(field))}
-                        {showWorkDetails &&
-                        (workMeta?.school || workMeta?.from) ? (
+                        {!employedNo && (workMeta?.school || workMeta?.from) ? (
                           <WorkExperienceEntries
                             form={form}
                             control={form.control}

@@ -3,7 +3,6 @@
 import type { ReactNode } from "react";
 import { Download, Loader2 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -108,13 +107,6 @@ export function TeacherProfileView({
   onDownloadResume,
   resumeDownloading,
 }: TeacherProfileViewProps) {
-  const statusVariant =
-    teacher.status === "active"
-      ? "default"
-      : teacher.status === "inactive"
-        ? "secondary"
-        : "outline";
-
   return (
     <div className="space-y-6">
       {loading ? (
@@ -125,9 +117,6 @@ export function TeacherProfileView({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
-        <Badge variant={statusVariant} className="capitalize">
-          {teacher.status}
-        </Badge>
         <span className="text-sm text-muted-foreground">
           Teacher ID: {display(teacher.id)}
         </span>

@@ -12,6 +12,7 @@ import type { Teacher, TeacherStatus, TeacherWorkExperience } from "@/types/teac
 
 import { getApiBase } from "@/lib/api-config";
 import { resolveResumeUrlFromApiRow } from "@/lib/teacher-resume";
+import { isEmployedNo } from "@/lib/work-experience-form";
 import {
   sanitizeApiStringArray,
   sanitizeApiText,
@@ -77,8 +78,9 @@ function workExperienceCamel(
 export function buildTeacherApiPayload(
   values: TeacherFormValues
 ): Record<string, unknown> {
-  const workSnake = values.workHistory.map(workExperienceSnake);
-  const workCamel = values.workHistory.map(workExperienceCamel);
+  const employedNo = isEmployedNo(values.customFields);
+  const workSnake = employedNo ? [] : values.workHistory.map(workExperienceSnake);
+  const workCamel = employedNo ? [] : values.workHistory.map(workExperienceCamel);
 
   const teacherRoles = resolveTeacherRoles(values);
   const subjectsTaught = resolveSubjectsTaught(values);
@@ -87,7 +89,7 @@ export function buildTeacherApiPayload(
     values.customFields?.area_of_interest
   );
   const skills = mergeApiStringArrays(values.skills, values.customFields?.skills);
-  const experienceYears = Number(values.experienceYears) || 0;
+  const experienceYears = employedNo ? 0 : Number(values.experienceYears) || 0;
   const currentSalary = Number(values.currentSalary) || 0;
   const qualifications = parseMultiselectStoredValue(values.qualification);
 
@@ -503,6 +505,8 @@ export function mapApiRowToTeacher(row: unknown): Teacher | null {
   if (idRaw == null || String(idRaw).length === 0) return null;
   const teacherCode = pickStr(r, "teacher_id", "teacherId");
 
+  const workRawProvided =
+    r.work_experience != null || r.workExperience != null || r.work_history != null;
   const workRaw = r.work_experience ?? r.workExperience ?? r.work_history;
   let workHistory: TeacherWorkExperience[] = [];
   if (Array.isArray(workRaw)) {
@@ -569,18 +573,20 @@ export function mapApiRowToTeacher(row: unknown): Teacher | null {
     workHistory:
       workHistory.length > 0
         ? workHistory
-        : [
-            {
-              id: `w-placeholder-${String(idRaw)}`,
-              schoolName:
-                pickStr(r, "current_school", "school_name", "organization") ||
-                "",
-              role: pickStr(r, "current_role", "role") || "",
-              from: new Date().toISOString().slice(0, 10),
-              to: null,
-              currentlyWorking: true,
-            },
-          ],
+        : workRawProvided
+          ? []
+          : [
+              {
+                id: `w-placeholder-${String(idRaw)}`,
+                schoolName:
+                  pickStr(r, "current_school", "school_name", "organization") ||
+                  "",
+                role: pickStr(r, "current_role", "role") || "",
+                from: new Date().toISOString().slice(0, 10),
+                to: null,
+                currentlyWorking: true,
+              },
+            ],
     resumeFileName: resumeFileLabel(r),
     resumeUrl: resolveResumeUrlFromApiRow(r),
     resumeMime: null,

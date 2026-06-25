@@ -218,14 +218,8 @@ export function resolveFieldOptions(
     return getAllIndianCities();
   }
 
-  if (field.options && field.options.length > 0) {
-    return field.options;
-  }
-
-  const slug =
-    FIELD_KEY_TO_SLUG[field.key] ??
-    (formKey ? FIELD_KEY_TO_SLUG[formKey] : undefined);
-
+  // For Country/State/City on the teacher form, always prefer the package dataset
+  // so the dropdown cascades correctly and doesn't get stuck on API-provided options.
   if (formKey === "country" || field.key === "country") {
     return getCountryNames();
   }
@@ -247,6 +241,14 @@ export function resolveFieldOptions(
     const forState = formOptions.citiesByState[selectedState];
     return forState?.length ? forState : [];
   }
+
+  if (field.options && field.options.length > 0) {
+    return field.options;
+  }
+
+  const slug =
+    FIELD_KEY_TO_SLUG[field.key] ??
+    (formKey ? FIELD_KEY_TO_SLUG[formKey] : undefined);
 
   if (slug && formOptions.bySlug[slug]?.length) {
     return formOptions.bySlug[slug]!;

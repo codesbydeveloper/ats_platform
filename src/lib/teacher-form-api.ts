@@ -128,7 +128,7 @@ export function normalizeTeacherFormConfig(data: unknown): ApiTeacherFormConfig 
         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
     : [];
 
-  return {
+  const config: ApiTeacherFormConfig = {
     sections,
     updatedAt:
       typeof root.updatedAt === "string"
@@ -137,6 +137,7 @@ export function normalizeTeacherFormConfig(data: unknown): ApiTeacherFormConfig 
           ? root.updated_at
           : undefined,
   };
+  return config;
 }
 
 type ApiResult<T> =

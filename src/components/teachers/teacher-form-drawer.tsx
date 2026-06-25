@@ -66,7 +66,7 @@ import {
   configHasWorkExperienceRows,
   defaultWorkEntry,
   EMPLOYED_FIELD_KEY,
-  employedValueFromSalary,
+  getEmployedValue,
 } from "@/lib/work-experience-form";
 import { createTeacherId, uid } from "@/utils/id";
 import { unwrapParseResumePayload } from "@/lib/parse-resume-to-form";
@@ -296,16 +296,18 @@ export function TeacherFormDrawer({
     setAiParsedLocation(null);
     if (mode === "edit" && teacher) {
       const values = teacherToFormValues(teacher);
-      const employed = employedValueFromSalary(
-        values.currentSalary,
-        values.customFields
-      );
+      const workCount = values.workHistory?.length ?? 0;
+      const employed = getEmployedValue(values.customFields);
+      const shouldDefaultEmployedYes = workCount > 0 && employed.trim() === "";
+      const shouldDefaultEmployedNo = workCount === 0 && employed.trim() === "";
+      const customFields = shouldDefaultEmployedYes
+        ? { ...(values.customFields ?? {}), [EMPLOYED_FIELD_KEY]: "Yes" }
+        : shouldDefaultEmployedNo
+          ? { ...(values.customFields ?? {}), [EMPLOYED_FIELD_KEY]: "No" }
+          : { ...(values.customFields ?? {}) };
       form.reset({
         ...values,
-        customFields: {
-          ...values.customFields,
-          [EMPLOYED_FIELD_KEY]: employed,
-        },
+        customFields,
       });
       return;
     }

@@ -67,11 +67,12 @@ export function TeacherAdvancedSearchPanel({
 
   const country =
     filters.dynamic.country?.[0]?.trim() || DEFAULT_COUNTRY_NAME;
-  const state = filters.dynamic.state?.[0]?.trim() ?? "";
+  const states = (filters.dynamic.state ?? []).map((s) => s.trim()).filter(Boolean);
+  const primaryState = states[0] ?? "";
 
   const optionContext = useMemo(
-    () => ({ country, state }),
-    [country, state]
+    () => ({ country, state: primaryState, states }),
+    [country, primaryState, states]
   );
 
   const orderedFields = useMemo(

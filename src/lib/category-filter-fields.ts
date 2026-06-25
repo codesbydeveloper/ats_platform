@@ -200,16 +200,13 @@ export function orderFilterFieldsForAdvancedSearch(
 export type FilterOptionsContext = {
   country?: string;
   state?: string;
+  states?: string[];
 };
 
 export function resolveFilterFieldOptions(
   field: CategoryFilterField,
   context: FilterOptionsContext = {}
 ): string[] {
-  if (field.options.length > 0) {
-    return field.options;
-  }
-
   const country = context.country?.trim() || DEFAULT_COUNTRY_NAME;
 
   if (field.key === "country") {
@@ -219,9 +216,20 @@ export function resolveFilterFieldOptions(
     return getStateNamesForCountry(country);
   }
   if (field.key === "city") {
-    const state = context.state?.trim();
-    if (!state) return [];
-    return getCityNamesForState(country, state);
+    const states =
+      (context.states?.length ? context.states : undefined) ??
+      (context.state?.trim() ? [context.state.trim()] : []);
+    if (!states.length) return [];
+    const out = new Set<string>();
+    for (const s of states) {
+      if (!s.trim()) continue;
+      for (const city of getCityNamesForState(country, s)) out.add(city);
+    }
+    return Array.from(out).sort((a, b) => a.localeCompare(b));
+  }
+
+  if (field.options.length > 0) {
+    return field.options;
   }
 
   return [];
