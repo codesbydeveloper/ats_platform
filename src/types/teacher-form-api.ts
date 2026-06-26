@@ -9,7 +9,11 @@ export type ApiTeacherFormFieldType =
   | "multiselect"
   | "date"
   | "boolean"
-  | "work_experience";
+  | "work_experience"
+  | "countries_states_cities"
+  | "countries"
+  | "indian_states"
+  | "indian_cities";
 
 export interface ApiTeacherFormField {
   id: string;

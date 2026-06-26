@@ -42,7 +42,12 @@ import {
 } from "@/utils/export-teachers";
 import { useAuthStore } from "@/store/auth-store";
 import { listAllCategoriesRequest } from "@/lib/categories-api";
+import { getTeacherFormRequest } from "@/lib/teacher-form-api";
 import { fetchTeacherFormOptions } from "@/lib/teacher-form-options";
+import {
+  getTeachersTableColumnsRequest,
+  putTeachersTableColumnsRequest,
+} from "@/lib/table-columns-api";
 import { useFilterStore } from "@/store/filter-store";
 import {
   bulkDeleteTeachersRequest,
@@ -60,6 +65,7 @@ import {
   TEACHERS_PAGE_SIZE_OPTIONS,
 } from "@/config/teachers-list";
 import type { Teacher, TeacherStatus } from "@/types/teacher";
+import type { ApiTeacherFormConfig } from "@/types/teacher-form-api";
 
 function FilterChips({ onSearch }: { onSearch: () => void }) {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -176,6 +182,10 @@ export function TeachersView() {
   const [apiTotal, setApiTotal] = useState(0);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  const [teacherFormConfig, setTeacherFormConfig] =
+    useState<ApiTeacherFormConfig | null>(null);
+  const [persistedTeacherTableColumns, setPersistedTeacherTableColumns] =
+    useState<string[] | null>(null);
 
   useEffect(() => {
     if (!accessToken) {
@@ -185,6 +195,28 @@ export function TeachersView() {
       setPageIndex(0);
       setPageSize(TEACHERS_DEFAULT_PAGE_SIZE);
     }
+  }, [accessToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getTeacherFormRequest(accessToken).then((res) => {
+      if (cancelled) return;
+      setTeacherFormConfig(res.ok ? res.data : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getTeachersTableColumnsRequest(accessToken).then((res) => {
+      if (cancelled) return;
+      setPersistedTeacherTableColumns(res.ok ? res.data.columns : null);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [accessToken]);
 
   const appliedFilterQueryKey = useMemo(
@@ -635,6 +667,15 @@ export function TeachersView() {
           compact={compactDensity}
           statusBusyId={statusBusyId}
           onStatusToggle={handleStatusToggle}
+          teacherFormConfig={teacherFormConfig}
+          persistedColumnApiKeys={persistedTeacherTableColumns}
+          onPersistColumnApiKeys={async (columns) => {
+            setPersistedTeacherTableColumns(columns);
+            const res = await putTeachersTableColumnsRequest(accessToken, columns);
+            if (res.ok) {
+              setPersistedTeacherTableColumns(res.data.columns);
+            }
+          }}
           serverPagination={
             useApiList
               ? {

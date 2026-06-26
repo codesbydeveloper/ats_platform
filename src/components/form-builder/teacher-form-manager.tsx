@@ -45,7 +45,22 @@ import type {
   ApiTeacherFormSection,
 } from "@/types/teacher-form-api";
 
-const FIELD_TYPES: { value: ApiTeacherFormFieldType; label: string }[] = [
+type LocationPresetType =
+  | "countries_states_cities"
+  | "countries"
+  | "indian_states"
+  | "indian_cities";
+
+type FormBuilderFieldType = ApiTeacherFormFieldType | LocationPresetType;
+
+const LOCATION_PRESET_LABELS: Record<LocationPresetType, string> = {
+  countries_states_cities: "Countries, states, cities",
+  countries: "Countries",
+  indian_states: "Indian States",
+  indian_cities: "Indian Cities",
+};
+
+const FIELD_TYPES: { value: FormBuilderFieldType; label: string }[] = [
   { value: "text", label: "Text" },
   { value: "textarea", label: "Long text" },
   { value: "email", label: "Email" },
@@ -56,7 +71,20 @@ const FIELD_TYPES: { value: ApiTeacherFormFieldType; label: string }[] = [
   { value: "date", label: "Date" },
   { value: "boolean", label: "Yes / No" },
   { value: "work_experience", label: "Work experience block" },
+  { value: "countries_states_cities", label: "Countries, states, cities" },
+  { value: "countries", label: "Countries" },
+  { value: "indian_states", label: "Indian States" },
+  { value: "indian_cities", label: "Indian Cities" },
 ];
+
+function isLocationPresetType(v: FormBuilderFieldType): v is LocationPresetType {
+  return (
+    v === "countries_states_cities" ||
+    v === "countries" ||
+    v === "indian_states" ||
+    v === "indian_cities"
+  );
+}
 
 function slugifyKey(label: string): string {
   return label
@@ -85,7 +113,7 @@ export function TeacherFormManager() {
   >(null);
   const [fieldLabel, setFieldLabel] = useState("");
   const [fieldKey, setFieldKey] = useState("");
-  const [fieldType, setFieldType] = useState<ApiTeacherFormFieldType>("text");
+  const [fieldType, setFieldType] = useState<FormBuilderFieldType>("text");
   const [fieldRequired, setFieldRequired] = useState(false);
   const [fieldOptions, setFieldOptions] = useState("");
 
@@ -111,6 +139,16 @@ export function TeacherFormManager() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // UX: when adding a location preset, lock label/key/options since these are shortcut bundles.
+  useEffect(() => {
+    if (fieldDialog?.mode !== "add") return;
+    if (!isLocationPresetType(fieldType)) return;
+    setFieldLabel(LOCATION_PRESET_LABELS[fieldType]);
+    setFieldKey("");
+    setFieldOptions("");
+    setFieldRequired(false);
+  }, [fieldType, fieldDialog]);
 
   const saveSection = async () => {
     if (!accessToken || !sectionDialog) return;
@@ -148,8 +186,9 @@ export function TeacherFormManager() {
 
   const saveField = async () => {
     if (!accessToken || !fieldDialog) return;
+    const preset = fieldDialog.mode === "add" && isLocationPresetType(fieldType);
     const label = fieldLabel.trim();
-    if (!label) {
+    if (!preset && !label) {
       toast.error("Enter a field label");
       return;
     }
@@ -160,31 +199,101 @@ export function TeacherFormManager() {
 
     setBusy(true);
     if (fieldDialog.mode === "add") {
-      const key = fieldKey.trim() || slugifyKey(label);
-      const result = await createTeacherFormFieldRequest(
-        accessToken,
-        fieldDialog.sectionId,
-        {
-          label,
-          key,
-          type: fieldType,
-          required: fieldRequired,
-          options: options.length ? options : undefined,
+      // Location preset types add 1 or 3 built-in dropdown fields at once.
+      if (preset) {
+        const presetType = fieldType;
+        const spec =
+          presetType === "countries_states_cities"
+            ? [
+                { label: "Country", key: "country", type: "countries" as const },
+                { label: "State", key: "state", type: "select" as const },
+                { label: "City", key: "city", type: "select" as const },
+              ]
+            : presetType === "countries"
+              ? [{ label: "Country", key: "country", type: "countries" as const }]
+              : presetType === "indian_states"
+                ? [
+                    {
+                      label: "State",
+                      key: "state",
+                      type: "indian_states" as const,
+                    },
+                  ]
+                : [
+                    { label: "City", key: "city", type: "indian_cities" as const },
+                  ];
+
+        const exists = (k: string) =>
+          config.sections.some((s) => s.fields.some((f) => f.key === k));
+
+        const section = config.sections.find((s) => s.id === fieldDialog.sectionId);
+        const maxSort = Math.max(
+          0,
+          ...(section?.fields ?? [])
+            .map((f) => (typeof f.sortOrder === "number" ? f.sortOrder : 0))
+            .filter((n) => Number.isFinite(n))
+        );
+
+        let created = 0;
+        for (let i = 0; i < spec.length; i++) {
+          const next = spec[i]!;
+          if (exists(next.key)) continue;
+          const r = await createTeacherFormFieldRequest(
+            accessToken,
+            fieldDialog.sectionId,
+            {
+              label: next.label,
+              key: next.key,
+              type: next.type,
+              required: false,
+              sortOrder: maxSort + 1 + i,
+            }
+          );
+          if (!r.ok) {
+            setBusy(false);
+            toast.error("Could not add field", { description: r.message });
+            return;
+          }
+          created++;
         }
-      );
-      setBusy(false);
-      if (!result.ok) {
-        toast.error("Could not add field", { description: result.message });
-        return;
+
+        setBusy(false);
+        if (created === 0) {
+          toast.message("Nothing to add", {
+            description: "Those fields already exist in the form.",
+          });
+        } else {
+          toast.success(
+            spec.length > 1 ? "Location fields added" : "Field added"
+          );
+        }
+      } else {
+        const key = fieldKey.trim() || slugifyKey(label);
+        const result = await createTeacherFormFieldRequest(
+          accessToken,
+          fieldDialog.sectionId,
+          {
+            label,
+            key,
+            type: fieldType as ApiTeacherFormFieldType,
+            required: fieldRequired,
+            options: options.length ? options : undefined,
+          }
+        );
+        setBusy(false);
+        if (!result.ok) {
+          toast.error("Could not add field", { description: result.message });
+          return;
+        }
+        toast.success("Field added");
       }
-      toast.success("Field added");
     } else {
       const result = await updateTeacherFormFieldRequest(
         accessToken,
         fieldDialog.fieldKey,
         {
           label,
-          type: fieldType,
+          type: fieldType as ApiTeacherFormFieldType,
           required: fieldRequired,
           options,
         }
@@ -433,7 +542,7 @@ export function TeacherFormManager() {
               <Label>Type</Label>
               <Select
                 value={fieldType}
-                onValueChange={(v) => setFieldType(v as ApiTeacherFormFieldType)}
+                onValueChange={(v) => setFieldType(v as FormBuilderFieldType)}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -447,7 +556,15 @@ export function TeacherFormManager() {
                 </SelectContent>
               </Select>
             </div>
-            {(fieldType === "select" || fieldType === "multiselect") && (
+            {fieldDialog?.mode === "edit" ? (
+              <p className="text-xs text-muted-foreground">
+                Note: Location presets (Countries / States / Cities) can only be
+                used when adding fields. Existing Country/State/City fields should
+                stay as type “Dropdown”.
+              </p>
+            ) : null}
+            {!(fieldDialog?.mode === "add" && isLocationPresetType(fieldType)) &&
+              (fieldType === "select" || fieldType === "multiselect") && (
               <div className="space-y-2">
                 <Label>Options (comma-separated)</Label>
                 <Textarea
@@ -457,10 +574,24 @@ export function TeacherFormManager() {
                 />
               </div>
             )}
-            <div className="flex items-center justify-between">
-              <Label>Required</Label>
-              <Switch checked={fieldRequired} onCheckedChange={setFieldRequired} />
-            </div>
+            {!(fieldDialog?.mode === "add" && isLocationPresetType(fieldType)) ? (
+              <div className="flex items-center justify-between">
+                <Label>Required</Label>
+                <Switch checked={fieldRequired} onCheckedChange={setFieldRequired} />
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                This will add{" "}
+                {fieldType === "countries_states_cities"
+                  ? "Country, State, and City"
+                  : fieldType === "countries"
+                    ? "Country"
+                    : fieldType === "indian_states"
+                      ? "State"
+                      : "City"}{" "}
+                dropdown field{fieldType === "countries_states_cities" ? "s" : ""}.
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFieldDialog(null)}>

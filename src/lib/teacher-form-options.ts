@@ -206,6 +206,18 @@ export function resolveFieldOptions(
   const selectedState = location?.selectedState;
 
   const formKey = apiFieldKeyToFormKey(field.key);
+
+  // Explicit location datasets from form builder.
+  // These override cascading behavior and always use the India dataset when requested.
+  if (field.type === "countries") {
+    return getCountryNames();
+  }
+  if (field.type === "indian_states") {
+    return getIndianStates();
+  }
+  if (field.type === "indian_cities") {
+    return getAllIndianCities();
+  }
   const wantsAllIndianCities =
     formKey === "currentLocation" ||
     formKey === "preferredLocation" ||

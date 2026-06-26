@@ -665,6 +665,11 @@ function ApiFormField({
   });
   const formKey = apiFieldKeyToFormKey(field.key);
   const isQualificationField = field.key === "qualification" || formKey === "qualification";
+  const isSelectLike =
+    field.type === "select" ||
+    field.type === "countries" ||
+    field.type === "indian_states" ||
+    field.type === "indian_cities";
   const selectOptionsWithCurrent = (value: unknown) => {
     const current = String(value ?? "").trim();
     if (!current) return options;
@@ -822,7 +827,7 @@ function ApiFormField({
                     f.onChange(raw === "" ? 0 : Number(raw));
                   }}
                 />
-              ) : field.type === "select" ? (
+              ) : isSelectLike ? (
                 <Select
                   disabled={disabled}
                   onValueChange={f.onChange}
@@ -899,7 +904,7 @@ function ApiFormField({
 
   const locationField = formKey != null && isLocationFormKey(formKey);
 
-  if (field.type === "select" || formKey === "subject" || locationField) {
+  if (isSelectLike || formKey === "subject" || locationField) {
     const emptyHint =
       locationField
         ? locationSelectEmptyHint(

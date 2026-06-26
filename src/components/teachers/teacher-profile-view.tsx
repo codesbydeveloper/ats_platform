@@ -183,7 +183,7 @@ export function TeacherProfileView({
           <ProfileField label="Subject taught" value={display(teacher.subject)} />
           <ProfileField label="Boards" value={formatList(teacher.boards)} />
           <ProfileField label="Grades" value={formatList(teacher.grades)} />
-          <ProfileField label="Roles" value={formatList(teacher.roles)} />
+          {/* <ProfileField label="Roles" value={formatList(teacher.roles)} /> */}
           <ProfileField
             label="Current location"
             value={display(teacher.currentLocation)}

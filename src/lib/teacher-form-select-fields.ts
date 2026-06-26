@@ -25,7 +25,13 @@ function normalizeLabel(name: string): string {
 export function isSelectOrMultiselectField(
   field: ApiTeacherFormField
 ): boolean {
-  return field.type === "select" || field.type === "multiselect";
+  return (
+    field.type === "select" ||
+    field.type === "multiselect" ||
+    field.type === "countries" ||
+    field.type === "indian_states" ||
+    field.type === "indian_cities"
+  );
 }
 
 export function fieldHasConfiguredOptions(field: ApiTeacherFormField): boolean {
