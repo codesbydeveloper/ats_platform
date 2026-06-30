@@ -42,6 +42,7 @@ import {
   getWorkRepeatFieldMeta,
   isWorkExperienceSection,
   isWorkRepeatFieldKey,
+  isTeacherRoleFieldKey,
   type WorkRepeatFieldMeta,
 } from "@/lib/work-experience-form";
 import {
@@ -641,7 +642,7 @@ function WorkExperienceBlock({
 }
 
 function ApiFormField({
-  field,
+  field: rawField,
   control,
   layoutError,
   form,
@@ -659,6 +660,10 @@ function ApiFormField({
   selectedState?: string;
   disabled?: boolean;
 }) {
+  const field =
+    isTeacherRoleFieldKey(rawField.key) && rawField.type === "text"
+      ? { ...rawField, type: "multiselect" as const }
+      : rawField;
   const options = resolveFieldOptions(field, formOptions, {
     selectedCountry,
     selectedState,

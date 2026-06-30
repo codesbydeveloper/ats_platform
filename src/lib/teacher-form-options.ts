@@ -14,6 +14,7 @@ import { findCategoryForLookup } from "@/lib/lookup-category";
 import { listAllCategoriesRequest } from "@/lib/categories-api";
 import { getTeacherFormRequest } from "@/lib/teacher-form-api";
 import { apiFieldKeyToFormKey } from "@/lib/teacher-form-field-map";
+import { isTeacherRoleFieldKey } from "@/lib/work-experience-form";
 import type { Category } from "@/types/category";
 import {
   findTeacherFormFieldForLookupSlug,
@@ -49,7 +50,9 @@ const FIELD_KEY_TO_SLUG: Record<string, LookupMenuSlug> = {
   grades: "grades-taught",
   grades_taught: "grades-taught",
   roles: "teacher-roles",
+  role: "teacher-roles",
   teacher_roles: "teacher-roles",
+  teacher_role: "teacher-roles",
   qualification: "educational-qualification",
   certifications: "qualification-certification",
   area_of_interest: "area-of-interest",
@@ -270,6 +273,9 @@ export function resolveFieldOptions(
   if (formKey === "boards") return formOptions.bySlug["boards-taught"] ?? [...BOARDS];
   if (formKey === "grades") return formOptions.bySlug["grades-taught"] ?? [...GRADES];
   if (formKey === "roles") return formOptions.bySlug["teacher-roles"] ?? [...ROLES];
+  if (isTeacherRoleFieldKey(field.key)) {
+    return formOptions.bySlug["teacher-roles"] ?? [...ROLES];
+  }
 
   return [];
 }

@@ -41,6 +41,15 @@ export function isWorkRepeatFieldKey(key: string): boolean {
   return WORK_REPEAT_FIELD_KEYS.has(key);
 }
 
+export function isTeacherRoleFieldKey(key: string): boolean {
+  const k = key.toLowerCase();
+  return (
+    k === "teacher_role" ||
+    k === "role" ||
+    k.startsWith("teacher_role_")
+  );
+}
+
 export function isWorkDetailFieldKey(key: string): boolean {
   return (
     WORK_DETAIL_FIELD_KEYS.has(key) || WORK_REPEAT_FIELD_KEYS.has(key)

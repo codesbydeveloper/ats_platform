@@ -51,14 +51,27 @@ type LocationPresetType =
   | "indian_states"
   | "indian_cities";
 
-type FormBuilderFieldType = ApiTeacherFormFieldType | LocationPresetType;
+type WorkRolePresetType = "school_organization_duration_role";
 
-const LOCATION_PRESET_LABELS: Record<LocationPresetType, string> = {
+type FieldBundlePresetType = LocationPresetType | WorkRolePresetType;
+
+type FormBuilderFieldType = ApiTeacherFormFieldType | FieldBundlePresetType;
+
+const BUNDLE_PRESET_LABELS: Record<FieldBundlePresetType, string> = {
   countries_states_cities: "Countries, states, cities",
   countries: "Countries",
   indian_states: "Indian States",
   indian_cities: "Indian Cities",
+  school_organization_duration_role:
+    "School / Organization, Duration From, Duration To, Teacher Role",
 };
+
+const WORK_ROLE_PRESET_BASE_KEYS = [
+  "school_organization",
+  "duration_from",
+  "duration_to",
+  "teacher_role",
+] as const;
 
 const FIELD_TYPES: { value: FormBuilderFieldType; label: string }[] = [
   { value: "text", label: "Text" },
@@ -71,6 +84,11 @@ const FIELD_TYPES: { value: FormBuilderFieldType; label: string }[] = [
   { value: "date", label: "Date" },
   { value: "boolean", label: "Yes / No" },
   { value: "work_experience", label: "Work experience block" },
+  {
+    value: "school_organization_duration_role",
+    label:
+      "School / Organization, Duration From, Duration To, Teacher Role",
+  },
   { value: "countries_states_cities", label: "Countries, states, cities" },
   { value: "countries", label: "Countries" },
   { value: "indian_states", label: "Indian States" },
@@ -86,12 +104,362 @@ function isLocationPresetType(v: FormBuilderFieldType): v is LocationPresetType 
   );
 }
 
+function isWorkRolePresetType(v: FormBuilderFieldType): v is WorkRolePresetType {
+  return v === "school_organization_duration_role";
+}
+
+function isFieldBundlePresetType(
+  v: FormBuilderFieldType
+): v is FieldBundlePresetType {
+  return isLocationPresetType(v) || isWorkRolePresetType(v);
+}
+
 function slugifyKey(label: string): string {
   return label
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_|_$/g, "");
+}
+
+/** Comma-separated labels → comma-separated slug keys (work-role / location bundles). */
+function slugifyKeysFromLabel(label: string): string {
+  return label
+    .split(/[,;\n]+/)
+    .map((part) => slugifyKey(part))
+    .filter(Boolean)
+    .join(", ");
+}
+
+function fieldKeyUsedInForm(
+  config: ApiTeacherFormConfig,
+  key: string
+): boolean {
+  return config.sections.some((s) => s.fields.some((f) => f.key === key));
+}
+
+function fieldKeyUsedInSection(
+  section: ApiTeacherFormSection | undefined,
+  key: string
+): boolean {
+  return section?.fields.some((f) => f.key === key) ?? false;
+}
+
+function isCountryField(field: ApiTeacherFormField): boolean {
+  const k = field.key.toLowerCase();
+  return field.type === "countries" || k === "country" || k.startsWith("country_");
+}
+
+function isStateField(field: ApiTeacherFormField): boolean {
+  const k = field.key.toLowerCase();
+  return (
+    field.type === "indian_states" ||
+    k === "state" ||
+    k.startsWith("state_")
+  );
+}
+
+function isCityField(field: ApiTeacherFormField): boolean {
+  const k = field.key.toLowerCase();
+  return (
+    field.type === "indian_cities" ||
+    k === "city" ||
+    k.startsWith("city_")
+  );
+}
+
+function locationPresetBlockedReason(
+  section: ApiTeacherFormSection,
+  presetType: LocationPresetType
+): string | null {
+  if (presetType === "countries_states_cities") {
+    if (
+      section.fields.some(isCountryField) ||
+      section.fields.some(isStateField) ||
+      section.fields.some(isCityField)
+    ) {
+      return "This section already has Country, State, or City fields.";
+    }
+    return null;
+  }
+  if (presetType === "countries") {
+    if (section.fields.some(isCountryField)) {
+      return "This section already has a Country field.";
+    }
+    return null;
+  }
+  if (presetType === "indian_states") {
+    if (section.fields.some(isStateField)) {
+      return "This section already has a State field.";
+    }
+    return null;
+  }
+  if (section.fields.some(isCityField)) {
+    return "This section already has a City field.";
+  }
+  return null;
+}
+
+function isWorkRolePresetField(field: ApiTeacherFormField): boolean {
+  const k = field.key.toLowerCase();
+  return WORK_ROLE_PRESET_BASE_KEYS.some(
+    (base) => k === base || k.startsWith(`${base}_`)
+  );
+}
+
+function workRolePresetBlockedReason(
+  section: ApiTeacherFormSection
+): string | null {
+  if (section.fields.some(isWorkRolePresetField)) {
+    return "This section already has School / Organization, Duration, or Teacher Role fields.";
+  }
+  return null;
+}
+
+/** Unique API field key — allows the same preset in multiple sections. */
+function allocateFieldKey(
+  baseKey: string,
+  config: ApiTeacherFormConfig,
+  section: ApiTeacherFormSection
+): string | null {
+  if (fieldKeyUsedInSection(section, baseKey)) return null;
+  if (!fieldKeyUsedInForm(config, baseKey)) return baseKey;
+
+  const sectionPart = slugifyKey(section.title) || slugifyKey(section.id) || "section";
+  let candidate = `${baseKey}_${sectionPart}`;
+  let n = 2;
+  while (fieldKeyUsedInForm(config, candidate)) {
+    candidate = `${baseKey}_${sectionPart}_${n}`;
+    n++;
+  }
+  return candidate;
+}
+
+type BundleFieldSpec = {
+  label: string;
+  key: string;
+  type: ApiTeacherFormFieldType;
+};
+
+function buildWorkRolePresetFields(
+  config: ApiTeacherFormConfig,
+  section: ApiTeacherFormSection
+): BundleFieldSpec[] | null {
+  const spec: { base: string; label: string; type: ApiTeacherFormFieldType }[] =
+    [
+      {
+        base: "school_organization",
+        label: "School / Organization",
+        type: "text",
+      },
+      { base: "duration_from", label: "Duration From", type: "date" },
+      { base: "duration_to", label: "Duration To", type: "date" },
+      { base: "teacher_role", label: "Teacher Role", type: "multiselect" },
+    ];
+
+  const out: BundleFieldSpec[] = [];
+  for (const item of spec) {
+    const key = allocateFieldKey(item.base, config, section);
+    if (!key) return null;
+    out.push({ label: item.label, key, type: item.type });
+  }
+  return out;
+}
+
+function buildFieldBundlePreset(
+  presetType: FieldBundlePresetType,
+  config: ApiTeacherFormConfig,
+  section: ApiTeacherFormSection
+): BundleFieldSpec[] | null {
+  if (isWorkRolePresetType(presetType)) {
+    return buildWorkRolePresetFields(config, section);
+  }
+  return buildLocationPresetFields(presetType, config, section);
+}
+
+function bundlePresetBlockedReason(
+  section: ApiTeacherFormSection,
+  presetType: FieldBundlePresetType
+): string | null {
+  if (isWorkRolePresetType(presetType)) {
+    return workRolePresetBlockedReason(section);
+  }
+  return locationPresetBlockedReason(section, presetType);
+}
+
+function bundlePresetSuccessMessage(
+  presetType: FieldBundlePresetType,
+  count: number
+): string {
+  if (count <= 1) return "Field added";
+  if (isWorkRolePresetType(presetType)) return "Work role fields added";
+  return "Location fields added";
+}
+
+function bundlePresetShowsKeyField(fieldType: FormBuilderFieldType): boolean {
+  return isWorkRolePresetType(fieldType) || isLocationPresetType(fieldType);
+}
+
+/** Preview API keys for the work-role bundle (editable in the dialog). */
+function previewWorkRolePresetKeys(
+  config: ApiTeacherFormConfig,
+  sectionId: string
+): string {
+  const section = config.sections.find((s) => s.id === sectionId);
+  if (!section) return "";
+  const spec = buildWorkRolePresetFields(config, section);
+  if (!spec?.length) return "";
+  return spec.map((f) => f.key).join(", ");
+}
+
+function resolveWorkRoleBundleKeys(
+  spec: BundleFieldSpec[],
+  keyInput: string,
+  config: ApiTeacherFormConfig,
+  section: ApiTeacherFormSection
+): { ok: true; spec: BundleFieldSpec[] } | { ok: false; message: string } {
+  const parsed = keyInput
+    .split(/[,;\n]+/)
+    .map((part) => slugifyKey(part.trim()) || part.trim())
+    .filter(Boolean);
+
+  const keys =
+    parsed.length === spec.length
+      ? parsed
+      : parsed.length === 0
+        ? spec.map((item) => item.key)
+        : null;
+
+  if (!keys) {
+    return {
+      ok: false,
+      message: `Enter ${spec.length} comma-separated keys (one per field), or leave blank to use the suggested keys.`,
+    };
+  }
+
+  const seen = new Set<string>();
+  for (const key of keys) {
+    if (!key) {
+      return { ok: false, message: "Each key must be non-empty." };
+    }
+    if (seen.has(key)) {
+      return { ok: false, message: `Duplicate key "${key}" in the list.` };
+    }
+    seen.add(key);
+    if (fieldKeyUsedInSection(section, key)) {
+      return {
+        ok: false,
+        message: `Key "${key}" already exists in this section.`,
+      };
+    }
+    if (fieldKeyUsedInForm(config, key)) {
+      return {
+        ok: false,
+        message: `Key "${key}" is already used in another section.`,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    spec: spec.map((item, index) => ({ ...item, key: keys[index]! })),
+  };
+}
+
+/** Apply comma-separated labels from the dialog (falls back to preset defaults). */
+function resolveBundleLabels(
+  spec: BundleFieldSpec[],
+  labelInput: string
+): BundleFieldSpec[] {
+  const trimmed = labelInput.trim();
+  const parsed = trimmed
+    .split(/[,;\n]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const labels =
+    parsed.length === spec.length
+      ? parsed
+      : parsed.length === 0
+        ? spec.map((item) => item.label)
+        : spec.length === 1
+          ? [trimmed]
+          : null;
+
+  if (!labels) return spec;
+
+  return spec.map((item, index) => ({ ...item, label: labels[index]! }));
+}
+
+type LocationFieldSpec = BundleFieldSpec;
+
+function buildLocationPresetFields(
+  presetType: LocationPresetType,
+  config: ApiTeacherFormConfig,
+  section: ApiTeacherFormSection
+): LocationFieldSpec[] | null {
+  const canonicalAvailable =
+    !fieldKeyUsedInForm(config, "country") &&
+    !fieldKeyUsedInForm(config, "state") &&
+    !fieldKeyUsedInForm(config, "city");
+
+  if (presetType === "countries_states_cities") {
+    const countryKey = allocateFieldKey("country", config, section);
+    const stateKey = allocateFieldKey("state", config, section);
+    const cityKey = allocateFieldKey("city", config, section);
+    if (!countryKey || !stateKey || !cityKey) return null;
+
+    const useCanonicalTypes =
+      canonicalAvailable &&
+      countryKey === "country" &&
+      stateKey === "state" &&
+      cityKey === "city";
+
+    return [
+      { label: "Country", key: countryKey, type: "countries" },
+      {
+        label: "State",
+        key: stateKey,
+        type: useCanonicalTypes ? "select" : "indian_states",
+      },
+      {
+        label: "City",
+        key: cityKey,
+        type: useCanonicalTypes ? "select" : "indian_cities",
+      },
+    ];
+  }
+
+  if (presetType === "countries") {
+    const countryKey = allocateFieldKey("country", config, section);
+    if (!countryKey) return null;
+    return [{ label: "Country", key: countryKey, type: "countries" }];
+  }
+
+  if (presetType === "indian_states") {
+    const stateKey = allocateFieldKey("state", config, section);
+    if (!stateKey) return null;
+    const useSelect =
+      stateKey === "state" && !fieldKeyUsedInForm(config, "state");
+    return [
+      {
+        label: "State",
+        key: stateKey,
+        type: useSelect ? "select" : "indian_states",
+      },
+    ];
+  }
+
+  const cityKey = allocateFieldKey("city", config, section);
+  if (!cityKey) return null;
+  const useSelect = cityKey === "city" && !fieldKeyUsedInForm(config, "city");
+  return [
+    {
+      label: "City",
+      key: cityKey,
+      type: useSelect ? "select" : "indian_cities",
+    },
+  ];
 }
 
 export function TeacherFormManager() {
@@ -140,16 +508,6 @@ export function TeacherFormManager() {
     void reload();
   }, [reload]);
 
-  // UX: when adding a location preset, lock label/key/options since these are shortcut bundles.
-  useEffect(() => {
-    if (fieldDialog?.mode !== "add") return;
-    if (!isLocationPresetType(fieldType)) return;
-    setFieldLabel(LOCATION_PRESET_LABELS[fieldType]);
-    setFieldKey("");
-    setFieldOptions("");
-    setFieldRequired(false);
-  }, [fieldType, fieldDialog]);
-
   const saveSection = async () => {
     if (!accessToken || !sectionDialog) return;
     setBusy(true);
@@ -186,7 +544,8 @@ export function TeacherFormManager() {
 
   const saveField = async () => {
     if (!accessToken || !fieldDialog) return;
-    const preset = fieldDialog.mode === "add" && isLocationPresetType(fieldType);
+    const preset =
+      fieldDialog.mode === "add" && isFieldBundlePresetType(fieldType);
     const label = fieldLabel.trim();
     if (!preset && !label) {
       toast.error("Enter a field label");
@@ -199,45 +558,58 @@ export function TeacherFormManager() {
 
     setBusy(true);
     if (fieldDialog.mode === "add") {
-      // Location preset types add 1 or 3 built-in dropdown fields at once.
+      // Bundle presets add multiple built-in fields at once.
       if (preset) {
         const presetType = fieldType;
-        const spec =
-          presetType === "countries_states_cities"
-            ? [
-                { label: "Country", key: "country", type: "countries" as const },
-                { label: "State", key: "state", type: "select" as const },
-                { label: "City", key: "city", type: "select" as const },
-              ]
-            : presetType === "countries"
-              ? [{ label: "Country", key: "country", type: "countries" as const }]
-              : presetType === "indian_states"
-                ? [
-                    {
-                      label: "State",
-                      key: "state",
-                      type: "indian_states" as const,
-                    },
-                  ]
-                : [
-                    { label: "City", key: "city", type: "indian_cities" as const },
-                  ];
-
-        const exists = (k: string) =>
-          config.sections.some((s) => s.fields.some((f) => f.key === k));
-
         const section = config.sections.find((s) => s.id === fieldDialog.sectionId);
+        if (!section) {
+          setBusy(false);
+          toast.error("Section not found");
+          return;
+        }
+
+        const blocked = bundlePresetBlockedReason(section, presetType);
+        if (blocked) {
+          setBusy(false);
+          toast.error("Cannot add again", { description: blocked });
+          return;
+        }
+
+        const spec = buildFieldBundlePreset(presetType, config, section);
+        if (!spec?.length) {
+          setBusy(false);
+          toast.error("Cannot add again", {
+            description: "This section already has those fields.",
+          });
+          return;
+        }
+
+        let finalSpec = spec;
+        if (isWorkRolePresetType(presetType) || isLocationPresetType(presetType)) {
+          const resolved = resolveWorkRoleBundleKeys(
+            spec,
+            fieldKey,
+            config,
+            section
+          );
+          if (!resolved.ok) {
+            setBusy(false);
+            toast.error("Invalid keys", { description: resolved.message });
+            return;
+          }
+          finalSpec = resolveBundleLabels(resolved.spec, label);
+        }
+
         const maxSort = Math.max(
           0,
-          ...(section?.fields ?? [])
+          ...section.fields
             .map((f) => (typeof f.sortOrder === "number" ? f.sortOrder : 0))
             .filter((n) => Number.isFinite(n))
         );
 
         let created = 0;
-        for (let i = 0; i < spec.length; i++) {
-          const next = spec[i]!;
-          if (exists(next.key)) continue;
+        for (let i = 0; i < finalSpec.length; i++) {
+          const next = finalSpec[i]!;
           const r = await createTeacherFormFieldRequest(
             accessToken,
             fieldDialog.sectionId,
@@ -258,17 +630,17 @@ export function TeacherFormManager() {
         }
 
         setBusy(false);
-        if (created === 0) {
-          toast.message("Nothing to add", {
-            description: "Those fields already exist in the form.",
-          });
-        } else {
-          toast.success(
-            spec.length > 1 ? "Location fields added" : "Field added"
-          );
-        }
+        toast.success(bundlePresetSuccessMessage(presetType, created));
       } else {
         const key = fieldKey.trim() || slugifyKey(label);
+        const section = config.sections.find((s) => s.id === fieldDialog.sectionId);
+        if (section && fieldKeyUsedInSection(section, key)) {
+          setBusy(false);
+          toast.error("Field already exists", {
+            description: "This section already has a field with that key.",
+          });
+          return;
+        }
         const result = await createTeacherFormFieldRequest(
           accessToken,
           fieldDialog.sectionId,
@@ -525,17 +897,34 @@ export function TeacherFormManager() {
               <Input
                 value={fieldLabel}
                 onChange={(e) => {
-                  setFieldLabel(e.target.value);
-                  if (fieldDialog?.mode === "add") {
-                    setFieldKey(slugifyKey(e.target.value));
+                  const nextLabel = e.target.value;
+                  setFieldLabel(nextLabel);
+                  if (fieldDialog?.mode !== "add") return;
+                  if (
+                    isWorkRolePresetType(fieldType) ||
+                    fieldType === "countries_states_cities"
+                  ) {
+                    setFieldKey(slugifyKeysFromLabel(nextLabel));
+                  } else {
+                    setFieldKey(slugifyKey(nextLabel));
                   }
                 }}
               />
             </div>
-            {fieldDialog?.mode === "add" ? (
+            {fieldDialog?.mode === "add" &&
+            (!isFieldBundlePresetType(fieldType) ||
+              bundlePresetShowsKeyField(fieldType)) ? (
               <div className="space-y-2">
                 <Label>Key</Label>
-                <Input value={fieldKey} onChange={(e) => setFieldKey(e.target.value)} />
+                <Input
+                  value={fieldKey}
+                  onChange={(e) => setFieldKey(e.target.value)}
+                />
+                {isWorkRolePresetType(fieldType) ? (
+                  <p className="text-xs text-muted-foreground">
+                   
+                  </p>
+                ) : null}
               </div>
             ) : null}
             <div className="space-y-2">
@@ -558,12 +947,11 @@ export function TeacherFormManager() {
             </div>
             {fieldDialog?.mode === "edit" ? (
               <p className="text-xs text-muted-foreground">
-                Note: Location presets (Countries / States / Cities) can only be
-                used when adding fields. Existing Country/State/City fields should
-                stay as type “Dropdown”.
+                Note: Field bundle presets (location / work role) can only be
+                used when adding fields.
               </p>
             ) : null}
-            {!(fieldDialog?.mode === "add" && isLocationPresetType(fieldType)) &&
+            {!(fieldDialog?.mode === "add" && isFieldBundlePresetType(fieldType)) &&
               (fieldType === "select" || fieldType === "multiselect") && (
               <div className="space-y-2">
                 <Label>Options (comma-separated)</Label>
@@ -574,24 +962,10 @@ export function TeacherFormManager() {
                 />
               </div>
             )}
-            {!(fieldDialog?.mode === "add" && isLocationPresetType(fieldType)) ? (
-              <div className="flex items-center justify-between">
-                <Label>Required</Label>
-                <Switch checked={fieldRequired} onCheckedChange={setFieldRequired} />
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                This will add{" "}
-                {fieldType === "countries_states_cities"
-                  ? "Country, State, and City"
-                  : fieldType === "countries"
-                    ? "Country"
-                    : fieldType === "indian_states"
-                      ? "State"
-                      : "City"}{" "}
-                dropdown field{fieldType === "countries_states_cities" ? "s" : ""}.
-              </p>
-            )}
+            <div className="flex items-center justify-between">
+              <Label>Required</Label>
+              <Switch checked={fieldRequired} onCheckedChange={setFieldRequired} />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFieldDialog(null)}>

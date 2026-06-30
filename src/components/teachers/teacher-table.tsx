@@ -89,7 +89,6 @@ const BASE_OPTIONAL_COLUMN_LABELS: Record<string, string> = {
 const WRAP_CELL_IDS = new Set([
   "teacherDetails",
   "subject",
-  "roles",
   "grades",
   "boards",
   "qualification",
@@ -129,17 +128,6 @@ function StackedCell({ items }: { items: string[] }) {
       ))}
     </div>
   );
-}
-
-function areaOfInterestLines(teacher: Teacher): string[] {
-  return parseMultiselectStoredValue(teacher.areaOfInterest);
-}
-
-/** Roles column: area of interest when set; otherwise API teacher roles. */
-function rolesColumnLines(teacher: Teacher): string[] {
-  const aoi = areaOfInterestLines(teacher);
-  if (aoi.length) return aoi;
-  return displayListItems(teacher.roles);
 }
 
 function subjectLines(teacher: Teacher): string[] {
@@ -216,9 +204,10 @@ function buildDynamicColumnSpecs(
     "select",
     "teacherDetails",
     "subject",
-    "roles",
     "grades",
     "boards",
+    "areaOfInterest",
+    "area_of_interest",
     "state",
     "country",
     "industry",
@@ -477,20 +466,6 @@ export function TeacherTable({
         accessorKey: "subject",
         header: "Subjects Taught",
         cell: ({ row }) => <StackedCell items={subjectLines(row.original)} />,
-      },
-      {
-        id: "roles",
-        header: () => (
-          <div className="leading-tight">
-            <div>Roles</div>
-            <div className="text-[10px] font-normal text-white/85">
-              Area of interest
-            </div>
-          </div>
-        ),
-        cell: ({ row }) => (
-          <StackedCell items={rolesColumnLines(row.original)} />
-        ),
       },
       {
         id: "grades",
