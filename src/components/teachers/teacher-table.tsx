@@ -39,6 +39,7 @@ import {
 import { TablePagination } from "@/components/shared/table-pagination";
 import { parseMultiselectStoredValue } from "@/lib/multiselect-form-value";
 import { isPlaceholderValue } from "@/lib/sanitize-api-values";
+import { resolveTeacherAreaOfInterest } from "@/lib/teachers-api";
 import { apiFieldKeyToFormKey, formKeyToApiKey } from "@/lib/teacher-form-field-map";
 import type { Teacher, TeacherStatus } from "@/types/teacher";
 import type { ApiTeacherFormConfig } from "@/types/teacher-form-api";
@@ -91,7 +92,6 @@ const BASE_OPTIONAL_COLUMN_LABELS: Record<string, string> = {
 const WRAP_CELL_IDS = new Set([
   "teacherDetails",
   "subject",
-  "areaOfInterest",
   "roles",
   "grades",
   "boards",
@@ -139,18 +139,17 @@ function subjectLines(teacher: Teacher): string[] {
 }
 
 function areaOfInterestLines(teacher: Teacher): string[] {
-  const fromField = displayListItems(
-    parseMultiselectStoredValue(teacher.areaOfInterest)
+  return displayListItems(resolveTeacherAreaOfInterest(teacher));
+}
+
+function isAreaOfInterestFieldKey(key: string): boolean {
+  const n = normalizeColumnId(key);
+  return (
+    n === "area_of_interest" ||
+    n === "areas_of_interest" ||
+    n === "areaofinterest" ||
+    n === "areasofinterest"
   );
-  if (fromField.length) return fromField;
-  const cf = teacher.customFields?.area_of_interest;
-  if (Array.isArray(cf)) {
-    return displayListItems(cf.map((item) => String(item)));
-  }
-  if (cf != null) {
-    return displayListItems(parseMultiselectStoredValue(String(cf)));
-  }
-  return [];
 }
 
 function rolesCommaSeparated(teacher: Teacher): string {
@@ -279,6 +278,10 @@ function buildDynamicColumnSpecs(
         id,
         label: String(f.label ?? apiKey),
         getValue: (t) => {
+          if (isAreaOfInterestFieldKey(apiKey)) {
+            const items = areaOfInterestLines(t);
+            return items.length ? items.join(", ") : undefined;
+          }
           const anyT = t as unknown as Record<string, unknown>;
           if (formKey && formKey in anyT) return anyT[formKey];
           const cf = (t.customFields ?? {}) as Record<string, unknown>;
@@ -494,22 +497,6 @@ export function TeacherTable({
         accessorKey: "subject",
         header: "Subjects Taught",
         cell: ({ row }) => <StackedCell items={subjectLines(row.original)} />,
-      },
-      {
-        id: "areaOfInterest",
-        enableHiding: false,
-        accessorKey: "areaOfInterest",
-        header: () => (
-          <div className="leading-tight">
-            <span className="block">Roles</span>
-            <span className="block text-xs font-normal opacity-90">
-              Area of Interest
-            </span>
-          </div>
-        ),
-        cell: ({ row }) => (
-          <StackedCell items={areaOfInterestLines(row.original)} />
-        ),
       },
       {
         id: "grades",

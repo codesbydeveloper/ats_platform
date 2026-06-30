@@ -282,6 +282,37 @@ function asStrArr(v: unknown): string[] {
   return parseApiStringArray(v);
 }
 
+/** All area-of-interest values from a mapped teacher row. */
+export function resolveTeacherAreaOfInterest(
+  teacher: Pick<Teacher, "areaOfInterest" | "customFields">
+): string[] {
+  const cf = (teacher.customFields ?? {}) as Record<string, unknown>;
+  return mergeApiStringArrays(
+    teacher.areaOfInterest,
+    cf.area_of_interest,
+    cf.areas_of_interest,
+    cf.areaOfInterest,
+    cf.areasOfInterest
+  );
+}
+
+function pickAreaOfInterestFromRow(
+  r: Record<string, unknown>,
+  customFields?: Record<string, string | number | boolean | string[]>
+): string {
+  const cf = customFields ?? {};
+  return (
+    mergeApiStringArrays(
+      r.area_of_interest,
+      r.areaOfInterest,
+      r.areas_of_interest,
+      r.areasOfInterest,
+      cf.area_of_interest,
+      cf.areas_of_interest
+    ).join(", ") || ""
+  );
+}
+
 function resolveTeacherRoles(values: TeacherFormValues): string[] {
   const cf = values.customFields ?? {};
   return mergeApiStringArrays(values.roles, cf.role, cf.teacher_roles);
@@ -379,14 +410,60 @@ function asNum(v: unknown, fallback = 0): number {
   return fallback;
 }
 
+function mergeCustomFieldEntry(
+  out: Record<string, string | number | boolean | string[]>,
+  key: string,
+  raw: unknown
+): void {
+  const k = key.trim();
+  if (!k || raw == null) return;
+  if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
+    if (typeof raw === "string" && !sanitizeApiText(raw)) return;
+    out[k] = raw;
+    return;
+  }
+  if (Array.isArray(raw)) {
+    const arr = parseApiStringArray(raw);
+    if (arr.length) out[k] = arr;
+  }
+}
+
+function mergeSkillsBlobIntoCustomFields(
+  raw: unknown,
+  out: Record<string, string | number | boolean | string[]>
+): void {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    mergeCustomFieldEntry(out, k, v);
+  }
+}
+
 function parseCustomFields(
   raw: unknown
 ): Record<string, string | number | boolean | string[]> | undefined {
   if (raw == null) return undefined;
+
+  if (Array.isArray(raw)) {
+    const out: Record<string, string | number | boolean | string[]> = {};
+    for (const item of raw) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const rec = item as Record<string, unknown>;
+      const key = String(rec.key ?? rec.field_key ?? rec.name ?? "").trim();
+      if (!key) continue;
+      mergeCustomFieldEntry(
+        out,
+        key,
+        rec.value ?? rec.field_value ?? rec.val
+      );
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+
   let obj: Record<string, unknown>;
   if (typeof raw === "string") {
     try {
-      obj = JSON.parse(raw) as Record<string, unknown>;
+      const parsed: unknown = JSON.parse(raw);
+      return parseCustomFields(parsed);
     } catch {
       return undefined;
     }
@@ -395,14 +472,10 @@ function parseCustomFields(
   } else {
     return undefined;
   }
+
   const out: Record<string, string | number | boolean | string[]> = {};
   for (const [k, v] of Object.entries(obj)) {
-    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
-      out[k] = v;
-    } else if (Array.isArray(v)) {
-      const arr = v.filter((x) => typeof x === "string") as string[];
-      if (arr.length) out[k] = arr;
-    }
+    mergeCustomFieldEntry(out, k, v);
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }
@@ -519,6 +592,8 @@ export function mapApiRowToTeacher(row: unknown): Teacher | null {
   const status: TeacherStatus =
     statusRaw === "inactive" || statusRaw === "pending" ? statusRaw : "active";
 
+  const customFieldsParsed = parseCustomFields(r.custom_fields ?? r.customFields);
+
   return {
     id: String(idRaw),
     teacherCode: teacherCode || null,
@@ -558,9 +633,7 @@ export function mapApiRowToTeacher(row: unknown): Teacher | null {
       "",
     preferredLocation:
       pickText(r, "preferred_location", "preferredLocation") || "",
-    areaOfInterest:
-      mergeApiStringArrays(r.area_of_interest, r.areaOfInterest).join(", ") ||
-      "",
+    areaOfInterest: pickAreaOfInterestFromRow(r, customFieldsParsed),
     currentSalary: asNum(r.current_salary ?? r.currentSalary, 0),
     experienceYears: asNum(
       r.total_experience ??
@@ -592,20 +665,40 @@ export function mapApiRowToTeacher(row: unknown): Teacher | null {
     resumeMime: null,
     notes: pickStr(r, "internal_notes", "notes") || "",
     status,
-    skills: mergeApiStringArrays(r.skills),
-    customFields: {
-      ...parseCustomFields(r.custom_fields ?? r.customFields),
-      ...(mergeApiStringArrays(r.reason_to_join).length
-        ? { reason_to_join: mergeApiStringArrays(r.reason_to_join) }
-        : {}),
-      ...(mergeApiStringArrays(r.where_did_you_hear_about_us).length
-        ? {
-            where_did_you_hear_about_us: mergeApiStringArrays(
-              r.where_did_you_hear_about_us
-            ),
-          }
-        : {}),
-    },
+    skills: mergeApiStringArrays(
+      Array.isArray(r.skills) ? r.skills : undefined,
+      r.skills_tags
+    ),
+    customFields: (() => {
+      const cf: Record<string, string | number | boolean | string[]> = {
+        ...(customFieldsParsed ?? {}),
+      };
+      mergeSkillsBlobIntoCustomFields(r.skills, cf);
+      const topLevelCustomKeys = [
+        "candidate_roles",
+        "candidate_type",
+        "candidate_role",
+        "alternate_number",
+        "alternate_email",
+        "alternate_mobile",
+        "source",
+        "informal_notes",
+        "industry",
+        "are_you_employed",
+      ];
+      for (const key of topLevelCustomKeys) {
+        if (r[key] != null) mergeCustomFieldEntry(cf, key, r[key]);
+      }
+      if (mergeApiStringArrays(r.reason_to_join).length) {
+        cf.reason_to_join = mergeApiStringArrays(r.reason_to_join);
+      }
+      if (mergeApiStringArrays(r.where_did_you_hear_about_us).length) {
+        cf.where_did_you_hear_about_us = mergeApiStringArrays(
+          r.where_did_you_hear_about_us
+        );
+      }
+      return Object.keys(cf).length > 0 ? cf : undefined;
+    })(),
     createdAt:
       pickStr(r, "created_at", "createdAt", "created") ||
       new Date().toISOString(),

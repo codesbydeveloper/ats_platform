@@ -145,90 +145,26 @@ function fieldKeyUsedInSection(
   return section?.fields.some((f) => f.key === key) ?? false;
 }
 
-function isCountryField(field: ApiTeacherFormField): boolean {
-  const k = field.key.toLowerCase();
-  return field.type === "countries" || k === "country" || k.startsWith("country_");
-}
-
-function isStateField(field: ApiTeacherFormField): boolean {
-  const k = field.key.toLowerCase();
-  return (
-    field.type === "indian_states" ||
-    k === "state" ||
-    k.startsWith("state_")
-  );
-}
-
-function isCityField(field: ApiTeacherFormField): boolean {
-  const k = field.key.toLowerCase();
-  return (
-    field.type === "indian_cities" ||
-    k === "city" ||
-    k.startsWith("city_")
-  );
-}
-
-function locationPresetBlockedReason(
-  section: ApiTeacherFormSection,
-  presetType: LocationPresetType
-): string | null {
-  if (presetType === "countries_states_cities") {
-    if (
-      section.fields.some(isCountryField) ||
-      section.fields.some(isStateField) ||
-      section.fields.some(isCityField)
-    ) {
-      return "This section already has Country, State, or City fields.";
-    }
-    return null;
-  }
-  if (presetType === "countries") {
-    if (section.fields.some(isCountryField)) {
-      return "This section already has a Country field.";
-    }
-    return null;
-  }
-  if (presetType === "indian_states") {
-    if (section.fields.some(isStateField)) {
-      return "This section already has a State field.";
-    }
-    return null;
-  }
-  if (section.fields.some(isCityField)) {
-    return "This section already has a City field.";
-  }
-  return null;
-}
-
-function isWorkRolePresetField(field: ApiTeacherFormField): boolean {
-  const k = field.key.toLowerCase();
-  return WORK_ROLE_PRESET_BASE_KEYS.some(
-    (base) => k === base || k.startsWith(`${base}_`)
-  );
-}
-
-function workRolePresetBlockedReason(
-  section: ApiTeacherFormSection
-): string | null {
-  if (section.fields.some(isWorkRolePresetField)) {
-    return "This section already has School / Organization, Duration, or Teacher Role fields.";
-  }
-  return null;
-}
-
-/** Unique API field key — allows the same preset in multiple sections. */
+/** Unique API field key — same preset type can repeat when the key differs. */
 function allocateFieldKey(
   baseKey: string,
   config: ApiTeacherFormConfig,
   section: ApiTeacherFormSection
-): string | null {
-  if (fieldKeyUsedInSection(section, baseKey)) return null;
-  if (!fieldKeyUsedInForm(config, baseKey)) return baseKey;
+): string {
+  if (
+    !fieldKeyUsedInSection(section, baseKey) &&
+    !fieldKeyUsedInForm(config, baseKey)
+  ) {
+    return baseKey;
+  }
 
   const sectionPart = slugifyKey(section.title) || slugifyKey(section.id) || "section";
   let candidate = `${baseKey}_${sectionPart}`;
   let n = 2;
-  while (fieldKeyUsedInForm(config, candidate)) {
+  while (
+    fieldKeyUsedInForm(config, candidate) ||
+    fieldKeyUsedInSection(section, candidate)
+  ) {
     candidate = `${baseKey}_${sectionPart}_${n}`;
     n++;
   }
@@ -244,7 +180,7 @@ type BundleFieldSpec = {
 function buildWorkRolePresetFields(
   config: ApiTeacherFormConfig,
   section: ApiTeacherFormSection
-): BundleFieldSpec[] | null {
+): BundleFieldSpec[] {
   const spec: { base: string; label: string; type: ApiTeacherFormFieldType }[] =
     [
       {
@@ -260,7 +196,6 @@ function buildWorkRolePresetFields(
   const out: BundleFieldSpec[] = [];
   for (const item of spec) {
     const key = allocateFieldKey(item.base, config, section);
-    if (!key) return null;
     out.push({ label: item.label, key, type: item.type });
   }
   return out;
@@ -270,21 +205,11 @@ function buildFieldBundlePreset(
   presetType: FieldBundlePresetType,
   config: ApiTeacherFormConfig,
   section: ApiTeacherFormSection
-): BundleFieldSpec[] | null {
+): BundleFieldSpec[] {
   if (isWorkRolePresetType(presetType)) {
     return buildWorkRolePresetFields(config, section);
   }
   return buildLocationPresetFields(presetType, config, section);
-}
-
-function bundlePresetBlockedReason(
-  section: ApiTeacherFormSection,
-  presetType: FieldBundlePresetType
-): string | null {
-  if (isWorkRolePresetType(presetType)) {
-    return workRolePresetBlockedReason(section);
-  }
-  return locationPresetBlockedReason(section, presetType);
 }
 
 function bundlePresetSuccessMessage(
@@ -397,7 +322,7 @@ function buildLocationPresetFields(
   presetType: LocationPresetType,
   config: ApiTeacherFormConfig,
   section: ApiTeacherFormSection
-): LocationFieldSpec[] | null {
+): LocationFieldSpec[] {
   const canonicalAvailable =
     !fieldKeyUsedInForm(config, "country") &&
     !fieldKeyUsedInForm(config, "state") &&
@@ -407,7 +332,6 @@ function buildLocationPresetFields(
     const countryKey = allocateFieldKey("country", config, section);
     const stateKey = allocateFieldKey("state", config, section);
     const cityKey = allocateFieldKey("city", config, section);
-    if (!countryKey || !stateKey || !cityKey) return null;
 
     const useCanonicalTypes =
       canonicalAvailable &&
@@ -432,13 +356,11 @@ function buildLocationPresetFields(
 
   if (presetType === "countries") {
     const countryKey = allocateFieldKey("country", config, section);
-    if (!countryKey) return null;
     return [{ label: "Country", key: countryKey, type: "countries" }];
   }
 
   if (presetType === "indian_states") {
     const stateKey = allocateFieldKey("state", config, section);
-    if (!stateKey) return null;
     const useSelect =
       stateKey === "state" && !fieldKeyUsedInForm(config, "state");
     return [
@@ -451,7 +373,6 @@ function buildLocationPresetFields(
   }
 
   const cityKey = allocateFieldKey("city", config, section);
-  if (!cityKey) return null;
   const useSelect = cityKey === "city" && !fieldKeyUsedInForm(config, "city");
   return [
     {
@@ -568,18 +489,11 @@ export function TeacherFormManager() {
           return;
         }
 
-        const blocked = bundlePresetBlockedReason(section, presetType);
-        if (blocked) {
-          setBusy(false);
-          toast.error("Cannot add again", { description: blocked });
-          return;
-        }
-
         const spec = buildFieldBundlePreset(presetType, config, section);
-        if (!spec?.length) {
+        if (!spec.length) {
           setBusy(false);
-          toast.error("Cannot add again", {
-            description: "This section already has those fields.",
+          toast.error("Cannot add field", {
+            description: "No fields to add for this preset.",
           });
           return;
         }
@@ -802,11 +716,12 @@ export function TeacherFormManager() {
                 >
                   <Pencil className="h-4 w-4" />
                 </Button>
-                {section.deletable !== false && !section.system ? (
+                {section.deletable !== false ? (
                   <Button
                     variant="ghost"
                     size="icon"
                     className="text-destructive"
+                    aria-label={`Delete ${section.title} section`}
                     onClick={() => setDeleteSectionId(section.id)}
                   >
                     <Trash2 className="h-4 w-4" />
