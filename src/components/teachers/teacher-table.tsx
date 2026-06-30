@@ -64,6 +64,7 @@ const BASE_DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
   industry: false,
   qualification: false,
   certifications: false,
+  roles: false,
   currentLocation: false,
   currentSalary: false,
   experienceYears: false,
@@ -78,6 +79,7 @@ const BASE_OPTIONAL_COLUMN_LABELS: Record<string, string> = {
   industry: "Industry",
   qualification: "Qualification",
   certifications: "Certifications",
+  roles: "Roles",
   currentLocation: "Current location",
   currentSalary: "Current salary",
   experienceYears: "Experience (years)",
@@ -89,6 +91,8 @@ const BASE_OPTIONAL_COLUMN_LABELS: Record<string, string> = {
 const WRAP_CELL_IDS = new Set([
   "teacherDetails",
   "subject",
+  "areaOfInterest",
+  "roles",
   "grades",
   "boards",
   "qualification",
@@ -132,6 +136,29 @@ function StackedCell({ items }: { items: string[] }) {
 
 function subjectLines(teacher: Teacher): string[] {
   return displayListItems(parseMultiselectStoredValue(teacher.subject));
+}
+
+function areaOfInterestLines(teacher: Teacher): string[] {
+  const fromField = displayListItems(
+    parseMultiselectStoredValue(teacher.areaOfInterest)
+  );
+  if (fromField.length) return fromField;
+  const cf = teacher.customFields?.area_of_interest;
+  if (Array.isArray(cf)) {
+    return displayListItems(cf.map((item) => String(item)));
+  }
+  if (cf != null) {
+    return displayListItems(parseMultiselectStoredValue(String(cf)));
+  }
+  return [];
+}
+
+function rolesCommaSeparated(teacher: Teacher): string {
+  const fromRoles = displayListItems(teacher.roles);
+  if (fromRoles.length) return fromRoles.join(", ");
+  const fromArea = areaOfInterestLines(teacher);
+  if (fromArea.length) return fromArea.join(", ");
+  return "—";
 }
 
 function resolveIndustryLabel(teacher: Teacher): string {
@@ -204,6 +231,7 @@ function buildDynamicColumnSpecs(
     "select",
     "teacherDetails",
     "subject",
+    "roles",
     "grades",
     "boards",
     "areaOfInterest",
@@ -468,6 +496,22 @@ export function TeacherTable({
         cell: ({ row }) => <StackedCell items={subjectLines(row.original)} />,
       },
       {
+        id: "areaOfInterest",
+        enableHiding: false,
+        accessorKey: "areaOfInterest",
+        header: () => (
+          <div className="leading-tight">
+            <span className="block">Roles</span>
+            <span className="block text-xs font-normal opacity-90">
+              Area of Interest
+            </span>
+          </div>
+        ),
+        cell: ({ row }) => (
+          <StackedCell items={areaOfInterestLines(row.original)} />
+        ),
+      },
+      {
         id: "grades",
         accessorKey: "grades",
         header: "Grades Taught",
@@ -481,6 +525,16 @@ export function TeacherTable({
         header: "Boards Taught",
         cell: ({ row }) => (
           <StackedCell items={displayListItems(row.original.boards)} />
+        ),
+      },
+      {
+        id: "roles",
+        header: "Roles",
+        accessorFn: (row) => rolesCommaSeparated(row),
+        cell: ({ row }) => (
+          <span className="max-w-[280px] whitespace-normal">
+            {rolesCommaSeparated(row.original)}
+          </span>
         ),
       },
       ...dynamicSpecs.map(
