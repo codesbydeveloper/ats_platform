@@ -1,4 +1,5 @@
 import { getApiBase } from "@/lib/api-config";
+import type { CategoryFilterField, CategoryFilterFieldType } from "@/lib/category-filter-fields";
 import type { LookupMenuSlug } from "@/config/lookup-menu";
 import type { ListLookupFieldOptionsResult } from "@/lib/categories-api";
 import { listTeacherFormFieldOptions } from "@/lib/teacher-form-select-fields";
@@ -82,6 +83,52 @@ export function isFieldFilterEnabled(field: {
   const f = field.filter;
   if (f == null) return false;
   return f === true || Number(f) > 0;
+}
+
+function mapFormFieldTypeToFilterType(
+  type: ApiTeacherFormField["type"]
+): CategoryFilterFieldType {
+  switch (type) {
+    case "select":
+    case "multiselect":
+    case "boolean":
+    case "date":
+    case "number":
+    case "email":
+    case "tel":
+    case "textarea":
+      return type;
+    case "countries":
+    case "indian_states":
+    case "indian_cities":
+    case "teacher_roles":
+      return "select";
+    default:
+      return "text";
+  }
+}
+
+/** Fields with filter toggle on in form builder → advanced search filters. */
+export function filterFieldsFromTeacherFormConfig(
+  config: ApiTeacherFormConfig
+): CategoryFilterField[] {
+  const out: CategoryFilterField[] = [];
+  for (const section of config.sections) {
+    for (const field of section.fields) {
+      if (!isFieldFilterEnabled(field)) continue;
+      if (field.type === "work_experience") continue;
+      out.push({
+        id: field.id || field.key,
+        label: field.label,
+        key: field.key,
+        type: mapFormFieldTypeToFilterType(field.type),
+        options: field.options ?? [],
+        sectionTitle: section.title,
+        sortOrder: field.sortOrder ?? 0,
+      });
+    }
+  }
+  return out;
 }
 
 function normalizeSection(raw: Record<string, unknown>): ApiTeacherFormSection {

@@ -5,6 +5,7 @@ import {
   getCountryNames,
   getStateNamesForCountry,
 } from "@/lib/locations";
+import { getAllIndianCities } from "@/lib/india-locations";
 import type { Teacher } from "@/types/teacher";
 
 export type CategoryFilterFieldType =
@@ -227,6 +228,9 @@ export function resolveFilterFieldOptions(
     }
     return Array.from(out).sort((a, b) => a.localeCompare(b));
   }
+  if (field.key === "current_location" || field.key === "preferred_location") {
+    return getAllIndianCities();
+  }
 
   if (field.options.length > 0) {
     return field.options;
@@ -245,6 +249,9 @@ export function usesDropdownFilterControl(
   }
   if (options.length > 0) return true;
   if (field.key === "state" || field.key === "city" || field.key === "country") {
+    return true;
+  }
+  if (field.key === "current_location" || field.key === "preferred_location") {
     return true;
   }
   return false;

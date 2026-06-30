@@ -6,7 +6,10 @@ import { Loader2, RotateCcw, Search } from "lucide-react";
 import { DynamicFilterFieldControl } from "@/components/teachers/dynamic-filter-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { listAllCategoriesRequest } from "@/lib/categories-api";
+import {
+  filterFieldsFromTeacherFormConfig,
+  getTeacherFormRequest,
+} from "@/lib/teacher-form-api";
 import type { CategoryFilterField } from "@/lib/category-filter-fields";
 import {
   mergeAdvancedSearchFilterFields,
@@ -46,7 +49,7 @@ export function TeacherAdvancedSearchPanel({
     setLoading(true);
     setLoadFailed(false);
 
-    void listAllCategoriesRequest(accessToken).then((result) => {
+    void getTeacherFormRequest(accessToken).then((result) => {
       if (cancelled) return;
       setLoading(false);
       if (!result.ok) {
@@ -54,7 +57,7 @@ export function TeacherAdvancedSearchPanel({
         setLoadFailed(true);
         return;
       }
-      setFields(result.filterFields);
+      setFields(filterFieldsFromTeacherFormConfig(result.data));
       setHasLoaded(true);
     });
 
@@ -127,7 +130,9 @@ export function TeacherAdvancedSearchPanel({
           className="h-9 w-full"
           placeholder="Global search (q)"
           value={filters.search}
-          onChange={(e) => setFilters({ search: e.target.value })}
+          onChange={(e) =>
+            setFilters({ search: e.target.value.replace(/\d/g, "") })
+          }
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();

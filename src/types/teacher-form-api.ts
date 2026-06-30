@@ -13,7 +13,8 @@ export type ApiTeacherFormFieldType =
   | "countries_states_cities"
   | "countries"
   | "indian_states"
-  | "indian_cities";
+  | "indian_cities"
+  | "teacher_roles";
 
 export interface ApiTeacherFormField {
   id: string;
